@@ -636,11 +636,12 @@ function buildPackage(seed: CompanySeed, agency: MarketplaceAgency, pkg: Package
   const firstDate = pkg.dates[0];
   const lastDate = pkg.dates[pkg.dates.length - 1];
   const i18nData = packageI18nByTitle[pkg.title];
-  /*const countryI18n = geoI18n.countries[pkg.country];*/
-  const countryI18n =
-  geoI18n.countries[pkg.country as keyof typeof geoI18n.countries];
-  const destinationI18n = geoI18n.destinations[pkg.destination];
-  const cityI18n = geoI18n.cities[pkg.city];
+  /*const countryI18n = geoI18n.countries[pkg.country]; --- CHANGED!!! --- */
+  /*const destinationI18n = geoI18n.destinations[pkg.destination]; --- CHANGED!!! --- */
+  /*const cityI18n = geoI18n.cities[pkg.city]; --- CHANGED!!! --- */
+  const countryI18n = geoI18n.countries[pkg.country as keyof typeof geoI18n.countries];
+  const destinationI18n = geoI18n.destinations[pkg.destination as keyof typeof geoI18n.destinations];
+const cityI18n = geoI18n.cities[pkg.city as keyof typeof geoI18n.cities];
 
   return {
     id: seed.id * 100 + index + 1,

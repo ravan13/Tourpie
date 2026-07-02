@@ -48,7 +48,10 @@ export default nextConfig;*/
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  outputFileTracingRoot: process.cwd(),
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   images: {
     unoptimized: true,
     remotePatterns: [

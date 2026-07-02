@@ -636,7 +636,9 @@ function buildPackage(seed: CompanySeed, agency: MarketplaceAgency, pkg: Package
   const firstDate = pkg.dates[0];
   const lastDate = pkg.dates[pkg.dates.length - 1];
   const i18nData = packageI18nByTitle[pkg.title];
-  const countryI18n = geoI18n.countries[pkg.country];
+  /*const countryI18n = geoI18n.countries[pkg.country];*/
+  const countryI18n =
+  geoI18n.countries[pkg.country as keyof typeof geoI18n.countries];
   const destinationI18n = geoI18n.destinations[pkg.destination];
   const cityI18n = geoI18n.cities[pkg.city];
 

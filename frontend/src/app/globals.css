@@ -1,0 +1,177 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html[lang="az"] {
+  --font-sans: var(--font-az-sans);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans",
+    "Helvetica Neue", sans-serif;
+}
+
+@keyframes tpGradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes tpFloatY {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes tpRouteDash {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -120;
+  }
+}
+
+@keyframes tpPlane {
+  0% {
+    offset-distance: 0%;
+  }
+  100% {
+    offset-distance: 100%;
+  }
+}
+
+@keyframes tpLivePulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(255, 74, 74, 0.28), 0 0 20px rgba(255, 74, 74, 0.2);
+  }
+  50% {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 5px rgba(255, 74, 74, 0.08), 0 0 28px rgba(255, 74, 74, 0.28);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(255, 74, 74, 0.28), 0 0 20px rgba(255, 74, 74, 0.2);
+  }
+}
+
+.tp-splash-gradient {
+  background-image:
+    radial-gradient(900px 520px at 18% 18%, rgba(168, 216, 255, 0.38), rgba(168, 216, 255, 0) 62%),
+    radial-gradient(860px 540px at 78% 30%, rgba(255, 106, 26, 0.28), rgba(255, 106, 26, 0) 60%),
+    radial-gradient(900px 620px at 50% 88%, rgba(2, 42, 107, 0.55), rgba(2, 42, 107, 0) 64%),
+    linear-gradient(120deg, #021a46, #022a6b, #0c3c7d, #0f6aa8, #ff6a1a);
+  background-size: 220% 220%;
+  animation: tpGradientShift 10.5s ease-in-out infinite;
+}
+
+.tp-route-dash {
+  stroke-dasharray: 8 12;
+  animation: tpRouteDash 1.25s linear infinite;
+}
+
+.tp-plane {
+  offset-path: path("M 20 60 C 84 10 210 12 300 40");
+  offset-rotate: auto 18deg;
+  animation: tpPlane 1.85s cubic-bezier(0.35, 0, 0.2, 1) infinite;
+}
+
+.tp-plane-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 10px 26px rgba(2, 42, 107, 0.28);
+  backdrop-filter: blur(12px);
+}
+
+.tp-progress-glow {
+  box-shadow: 0 0 18px rgba(168, 216, 255, 0.22), 0 0 30px rgba(255, 106, 26, 0.12);
+  transition: width 320ms ease-out;
+}
+
+.tp-float {
+  animation: tpFloatY 7.2s ease-in-out infinite;
+}
+
+.tp-float-1 {
+  animation-duration: 8.4s;
+}
+
+.tp-float-2 {
+  animation-duration: 9.8s;
+}
+
+.tp-float-3 {
+  animation-duration: 10.6s;
+}
+
+.tp-route-float {
+  animation: tpFloatY 12.5s ease-in-out infinite;
+}
+
+.tp-live-badge {
+  background: linear-gradient(135deg, #ff6a6a 0%, #ef4444 45%, #c81e1e 100%);
+  animation: tpLivePulse 1s ease-in-out infinite;
+  transform-origin: center;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.tp-live-badge:hover {
+  transform: scale(1.06);
+}
+
+.tp-live-dot {
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.85);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tp-splash-gradient,
+  .tp-float,
+  .tp-route-float,
+  .tp-route-dash,
+  .tp-plane,
+  .tp-live-badge {
+    animation: none !important;
+  }
+
+  .tp-progress-glow {
+    transition: none !important;
+  }
+}

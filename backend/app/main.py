@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
-from .routers import users, packages, bookings, agencies, recommendations, favorites, messages, notifications, community, blog, moderation
+from .routers import users, packages, bookings, agencies, recommendations, favorites, messages, notifications, community, blog, moderation, trip_marketplace
 from sqlalchemy import text
 
 # Create database tables
@@ -13,6 +13,24 @@ def _ensure_columns():
         "ALTER TABLE packages ADD COLUMN IF NOT EXISTS package_type VARCHAR",
         "ALTER TABLE packages ADD COLUMN IF NOT EXISTS hotel_rating INTEGER",
         "ALTER TABLE packages ADD COLUMN IF NOT EXISTS transportation_type VARCHAR",
+        "ALTER TABLE agencies ADD COLUMN IF NOT EXISTS subscription_status VARCHAR",
+        "ALTER TABLE agencies ADD COLUMN IF NOT EXISTS custom_trip_requests_enabled BOOLEAN",
+        "ALTER TABLE agencies ADD COLUMN IF NOT EXISTS countries_served TEXT",
+        "ALTER TABLE agencies ADD COLUMN IF NOT EXISTS cities_served TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_currency VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS time_zone VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token_hash VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token_expires_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_change_token_hash VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_change_token_expires_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_change_sent_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_change_rate_window_start TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_change_rate_count INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP",
     ]
     try:
         with engine.begin() as conn:
@@ -46,6 +64,7 @@ app.include_router(notifications.router, prefix="/notifications", tags=["notific
 app.include_router(community.router, prefix="/community", tags=["community"])
 app.include_router(blog.router, prefix="/blog", tags=["blog"])
 app.include_router(moderation.router, prefix="/moderation", tags=["moderation"])
+app.include_router(trip_marketplace.router, tags=["trip_marketplace"])
 
 @app.get("/")
 async def root():

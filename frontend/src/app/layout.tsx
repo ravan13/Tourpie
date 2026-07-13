@@ -5,6 +5,7 @@ import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import SplashGate from "@/components/SplashScreen";
+import CustomTripEntryPoint from "@/components/CustomTripEntryPoint";
 import { LanguageProvider } from "@/context/LanguageContext";
 import { cookies } from "next/headers";
 
@@ -66,10 +67,16 @@ export const metadata: Metadata = {
     images: ["/tourpie-social.svg"],
   },
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
-    apple: [{ url: "/apple-icon.svg", type: "image/svg+xml" }],
-    shortcut: ["/tourpie-favicon.svg"],
+    icon: [
+      { url: "/favicon.ico", type: "image/x-icon" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/tourpie_icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    shortcut: ["/favicon.ico"],
   },
+  manifest: "/site.webmanifest",
   themeColor: "#022A6B",
 };
 
@@ -97,10 +104,10 @@ export default async function RootLayout({
             <Navbar />
             <main>{children}</main>
             <Footer />
+            <CustomTripEntryPoint />
           </SplashGate>
         </LanguageProvider>
       </body>
     </html>
   );
 }
-

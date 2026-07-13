@@ -192,7 +192,8 @@ export default function CommunityPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-10">
+    <div className="tp-page-shell">
+      <div className="relative z-[1] max-w-7xl mx-auto px-4 py-10">
       <PageHeader
         title={t("community_title")}
         subtitle={t("community_subtitle")}
@@ -886,6 +887,7 @@ export default function CommunityPage() {
           </div>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

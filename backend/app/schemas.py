@@ -42,6 +42,19 @@ class UserRequestVerification(BaseModel):
     email: EmailStr
     language: Optional[str] = None
 
+class UserProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    country: Optional[str] = None
+    preferred_language: Optional[str] = None
+    preferred_currency: Optional[str] = None
+    time_zone: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+class UserEmailChangeRequest(BaseModel):
+    new_email: EmailStr
+    language: Optional[str] = None
+
 class UserRequestPhoneVerification(BaseModel):
     email: EmailStr
     language: Optional[str] = None
@@ -81,6 +94,11 @@ class UserOnboarding(BaseModel):
 class User(UserBase):
     id: int
     created_at: datetime
+    preferred_language: Optional[str] = None
+    preferred_currency: Optional[str] = None
+    time_zone: Optional[str] = None
+    avatar_url: Optional[str] = None
+    auth_provider: Optional[str] = None
     is_verified: bool = False
     is_email_verified: bool = False
     is_phone_verified: bool = False
@@ -89,6 +107,8 @@ class User(UserBase):
     banned_until: Optional[datetime] = None
     banned_reason: Optional[str] = None
     agency_id: Optional[int] = None
+    pending_email: Optional[EmailStr] = None
+    last_login_at: Optional[datetime] = None
     preferred_destinations: Optional[List[str]] = None
     budget_range: Optional[str] = None
     travel_style: Optional[str] = None
@@ -108,6 +128,21 @@ class User(UserBase):
             except Exception:
                 return None
         return None
+
+    class Config:
+        from_attributes = True
+
+class UserSession(BaseModel):
+    session_id: str
+    auth_provider: Optional[str] = None
+    device_label: Optional[str] = None
+    user_agent: Optional[str] = None
+    ip_address: Optional[str] = None
+    created_at: datetime
+    last_seen_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+    is_current: bool = False
 
     class Config:
         from_attributes = True
@@ -132,6 +167,10 @@ class AgencyUpdate(BaseModel):
     office_address: Optional[str] = None
     tax_vat_info: Optional[str] = None
     status: Optional[str] = None
+    subscription_status: Optional[str] = None
+    custom_trip_requests_enabled: Optional[bool] = None
+    countries_served: Optional[str] = None
+    cities_served: Optional[str] = None
 
 class Agency(AgencyBase):
     id: int
@@ -140,6 +179,10 @@ class Agency(AgencyBase):
     office_address: Optional[str] = None
     tax_vat_info: Optional[str] = None
     status: Optional[str] = None
+    subscription_status: Optional[str] = None
+    custom_trip_requests_enabled: Optional[bool] = None
+    countries_served: Optional[str] = None
+    cities_served: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -588,3 +631,177 @@ class ModerationCommunityPostDecisionRequest(BaseModel):
 class ModerationUserBanRequest(BaseModel):
     reason: Optional[str] = None
     duration_days: Optional[int] = None
+
+class TripRequestCreateRequest(BaseModel):
+    destination: str
+    destination_type: Literal["any", "country", "city"] = "any"
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    flexible_dates: bool = False
+    adults: int = 1
+    children: int = 0
+    ideal_budget: float
+    max_budget: Optional[float] = None
+    budget_currency: str = "USD"
+    budget_flexibility: Literal["fixed", "flexible_10", "flexible_20", "no_budget_limit"] = "fixed"
+    hotel_stars: Optional[int] = None
+    meal_type: Optional[str] = None
+    flight_included: bool = False
+    transfer_included: bool = False
+    visa_assistance: bool = False
+    travel_insurance: bool = False
+    preferred_airline: Optional[str] = None
+    accommodation_preferences: Optional[str] = None
+    activities_interests: Optional[str] = None
+    special_notes: Optional[str] = None
+    offer_expiration_hours: Literal[24, 48, 72] = 48
+
+class TripRequest(BaseModel):
+    id: int
+    request_code: str
+    user_id: int
+    destination: str
+    destination_type: str
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    flexible_dates: bool
+    adults: int
+    children: int
+    ideal_budget: float
+    max_budget: Optional[float] = None
+    budget_currency: str
+    budget_flexibility: str
+    hotel_stars: Optional[int] = None
+    meal_type: Optional[str] = None
+    flight_included: bool
+    transfer_included: bool
+    visa_assistance: bool
+    travel_insurance: bool
+    preferred_airline: Optional[str] = None
+    accommodation_preferences: Optional[str] = None
+    activities_interests: Optional[str] = None
+    special_notes: Optional[str] = None
+    offer_expiration_hours: int
+    expires_at: datetime
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class TripRequestAgencyMatch(BaseModel):
+    id: int
+    trip_request_id: int
+    agency_id: int
+    status: str
+    declined_reason: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class TripOfferCreateRequest(BaseModel):
+    total_price: float
+    currency: str = "USD"
+    hotel: Optional[str] = None
+    room_type: Optional[str] = None
+    meal_plan: Optional[str] = None
+    flight: Optional[str] = None
+    transfer: Optional[str] = None
+    visa: Optional[str] = None
+    insurance: Optional[str] = None
+    activities: Optional[str] = None
+    offer_description: Optional[str] = None
+    additional_benefits: Optional[str] = None
+    offer_expiration_hours: Optional[int] = None
+    price_difference_reason: Optional[str] = None
+    price_difference_notes: Optional[str] = None
+
+class TripOffer(BaseModel):
+    id: int
+    trip_request_id: int
+    agency_id: int
+    created_by_user_id: int
+    total_price: float
+    currency: str
+    hotel: Optional[str] = None
+    room_type: Optional[str] = None
+    meal_plan: Optional[str] = None
+    flight: Optional[str] = None
+    transfer: Optional[str] = None
+    visa: Optional[str] = None
+    insurance: Optional[str] = None
+    activities: Optional[str] = None
+    offer_description: Optional[str] = None
+    additional_benefits: Optional[str] = None
+    price_difference_reason: Optional[str] = None
+    price_difference_notes: Optional[str] = None
+    expires_at: datetime
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    accepted_at: Optional[datetime] = None
+    declined_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class TripBooking(BaseModel):
+    id: int
+    trip_request_id: int
+    trip_offer_id: int
+    user_id: int
+    agency_id: int
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class TripOfferMessageCreateRequest(BaseModel):
+    content: str
+
+class TripOfferMessage(BaseModel):
+    id: int
+    trip_request_id: int
+    trip_offer_id: Optional[int] = None
+    user_id: int
+    agency_id: int
+    sender_role: str
+    sender_user_id: Optional[int] = None
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class TripOfferNotification(BaseModel):
+    id: int
+    recipient_user_id: int
+    trip_request_id: Optional[int] = None
+    trip_offer_id: Optional[int] = None
+    type: str
+    title: str
+    body: Optional[str] = None
+    link_url: Optional[str] = None
+    is_read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class OfferComparison(BaseModel):
+    id: int
+    trip_request_id: int
+    trip_offer_id: int
+    ideal_budget: float
+    max_budget: Optional[float] = None
+    offer_price: float
+    budget_status: str
+    delta_from_ideal: Optional[float] = None
+    delta_from_max: Optional[float] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

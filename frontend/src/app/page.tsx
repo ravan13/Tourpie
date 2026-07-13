@@ -5,11 +5,13 @@ import Link from "next/link";
 import { api, Package } from "@/lib/api";
 import { Currency, useLanguage } from "@/context/LanguageContext";
 import { useEffect, useState } from "react";
-import Logo from "@/components/Logo";
 import HotNowHub from "@/components/HotNowHub";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import Logo from "@/components/Logo";
 
 export default function Home() {
   const { t, currency, setCurrency, formatPackageMoney } = useLanguage();
+  const { isLoggedIn, user } = useCurrentUser();
   const [featuredPackages, setFeaturedPackages] = useState<Package[]>([]);
   const [trendingPackages, setTrendingPackages] = useState<Package[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +82,29 @@ export default function Home() {
     { name: "Baku", country: "Azerbaijan", image: "https://images.unsplash.com/photo-1449824913935-59a10b8d2000?q=80&w=800" },
   ];
 
+  const heroActions = isLoggedIn
+    ? user?.role === "agency"
+      ? [
+          { href: "/agency", label: t("nav_dashboard"), primary: true },
+          { href: "/agency/incoming-requests", label: t("agency_nav_incoming_requests") || "Incoming Requests" },
+          { href: "/marketplace", label: t("nav_marketplace") },
+        ]
+      : user?.role === "admin"
+        ? [
+            { href: "/admin", label: t("nav_dashboard"), primary: true },
+            { href: "/marketplace", label: t("nav_marketplace") },
+          ]
+        : [
+            { href: "/marketplace", label: t("nav_marketplace") },
+            { href: "/dashboard", label: t("nav_dashboard"), primary: true },
+            { href: "/dashboard/bookings", label: t("nav_bookings") },
+            { href: "/request-custom-offers", label: t("home_custom_trip_title") },
+          ]
+    : [
+        { href: "/login", label: t("nav_login") },
+        { href: "/agency/register", label: t("agency_register_cta"), primary: true },
+      ];
+
   return (
     <div className="relative min-h-screen bg-white">
       {/* Hero Section */}
@@ -120,21 +145,22 @@ export default function Home() {
                   {t("hero_subtitle")}
                 </p>
 
-                <div className="flex flex-col sm:flex-row justify-center gap-4">
-                  <Link
-                    href="/login"
-                    prefetch={false}
-                    className="inline-flex justify-center bg-white/15 hover:bg-white/20 backdrop-blur-md text-white font-bold px-8 py-4 rounded-2xl border border-white/25 transition-colors"
-                  >
-                    {t("nav_login")}
-                  </Link>
-                  <Link
-                    href="/agency/register"
-                    prefetch={false}
-                    className="inline-flex justify-center bg-blue-500 hover:bg-blue-400 text-white font-bold px-8 py-4 rounded-2xl transition-colors shadow-lg shadow-blue-500/20"
-                  >
-                    {t("agency_register_cta")}
-                  </Link>
+                <div className="flex flex-col sm:flex-row justify-center gap-4 flex-wrap">
+                  {heroActions.map((action) => (
+                    <Link
+                      key={`${action.href}-${action.label}`}
+                      href={action.href}
+                      prefetch={false}
+                      className={[
+                        "inline-flex justify-center font-bold px-8 py-4 rounded-2xl transition-colors",
+                        action.primary
+                          ? "bg-blue-500 hover:bg-blue-400 text-white shadow-lg shadow-blue-500/20"
+                          : "bg-white/15 hover:bg-white/20 backdrop-blur-md text-white border border-white/25",
+                      ].join(" ")}
+                    >
+                      {action.label}
+                    </Link>
+                  ))}
                 </div>
               </div>
 
@@ -316,6 +342,44 @@ export default function Home() {
       </section>
 
       <HotNowHub mode="compact" />
+
+      <section className="py-16 sm:py-20">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="relative overflow-hidden rounded-[2.75rem] border border-gray-100 bg-white shadow-sm">
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-50 via-white to-orange-50" aria-hidden="true" />
+            <div className="relative p-10 sm:p-12 lg:p-14">
+              <div className="max-w-3xl">
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/70 px-4 py-2 text-[11px] font-black uppercase tracking-[0.28em] text-blue-700 border border-white/70">
+                  <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
+                  {t("marketplace_badge")}
+                </div>
+                <h2 className="mt-6 text-4xl sm:text-5xl font-black tracking-tight text-gray-900">
+                  {t("home_custom_trip_title")}
+                </h2>
+                <p className="mt-4 text-lg sm:text-xl font-medium text-gray-600 leading-relaxed">
+                  {t("home_custom_trip_subtitle")}
+                </p>
+                <div className="mt-8 flex flex-col sm:flex-row gap-4">
+                  <Link
+                    href="/request-custom-offers"
+                    prefetch={false}
+                    className="inline-flex items-center justify-center rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black px-8 py-4 shadow-lg shadow-blue-200 transition-colors"
+                  >
+                    {t("home_custom_trip_cta")}
+                  </Link>
+                  <Link
+                    href="/marketplace"
+                    prefetch={false}
+                    className="inline-flex items-center justify-center rounded-2xl bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-8 py-4 transition-colors"
+                  >
+                    {t("discover_hub_cta")}
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Recommended Section (Trending) */}
       <section className="py-24">

@@ -29,6 +29,29 @@ def get_current_user(
     user = db.query(models.User).filter(func.lower(models.User.email) == sub).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    session_id = str(payload.get("sid") or "").strip()
+    if session_id:
+        session = (
+            db.query(models.UserSession)
+            .filter(
+                models.UserSession.user_id == user.id,
+                models.UserSession.session_id == session_id,
+                models.UserSession.revoked_at.is_(None),
+            )
+            .first()
+        )
+        if not session:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        expires_at = getattr(session, "expires_at", None)
+        if expires_at:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
+            else:
+                expires_at = expires_at.astimezone(datetime.timezone.utc)
+            if datetime.datetime.now(datetime.timezone.utc) > expires_at:
+                session.revoked_at = datetime.datetime.now(datetime.timezone.utc)
+                db.commit()
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     if getattr(user, "is_banned", False):
         banned_until = getattr(user, "banned_until", None)
         if not banned_until:

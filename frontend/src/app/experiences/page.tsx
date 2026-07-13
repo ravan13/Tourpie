@@ -1,23 +1,174 @@
 "use client";
 
 import Image from "next/image";
-import PageHeader from "@/components/PageHeader";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "@/context/LanguageContext";
-import { api, CommunityPost, CommunityPostKind } from "@/lib/api";
+import { api, CommunityPost, CommunityPostKind, getStoredToken } from "@/lib/api";
+
+function sanitizeImageSrc(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function buildImageUrl(prompt: string, imageSize: "landscape_16_9" | "portrait_4_3" = "landscape_16_9") {
+  return `https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=${encodeURIComponent(prompt)}&image_size=${imageSize}`;
+}
+
+function hashSeed(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+type CategoryMeta = {
+  id: string;
+  label: string;
+  hint: string;
+  accentClass: string;
+  panelClass: string;
+  basePrice: number;
+  minDays: number;
+  maxDays: number;
+  destinations: Array<{ city: string; country: string }>;
+};
+
+type ExperienceCard = {
+  id: number;
+  post: CommunityPost;
+  title: string;
+  summary: string;
+  cover: string;
+  categoryId: string;
+  categoryLabel: string;
+  city: string;
+  country: string;
+  price: number;
+  durationDays: number;
+  rating: number;
+  reviews: number;
+  score: number;
+  createdAt: number;
+  author: string;
+  tags: string[];
+};
+
+function CategoryGlyph({ id }: { id: string }) {
+  const common = "h-5 w-5";
+  switch (id) {
+    case "adventure":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={common} aria-hidden="true">
+          <path d="M4 18L10.3 6.7a1 1 0 0 1 1.76.05L20 18H4Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M12 10.5 13.9 14h-3.8l1.9-3.5Z" fill="currentColor" />
+        </svg>
+      );
+    case "nature":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={common} aria-hidden="true">
+          <path d="M12 20c4.4 0 8-3.5 8-7.8C20 8.4 17.1 5 12 4c-5.1 1-8 4.4-8 8.2C4 16.5 7.6 20 12 20Z" stroke="currentColor" strokeWidth="1.8" />
+          <path d="M12 8v8M12 12c-1.6-.2-2.7-1-3.6-2.3M12 13c1.6-.2 2.7-1 3.6-2.3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      );
+    case "culture":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={common} aria-hidden="true">
+          <path d="M5 18h14M6.5 18V9.5M10.5 18V9.5M14.5 18V9.5M18 18V9.5M4 9.5 12 5l8 4.5H4Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      );
+    case "food":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={common} aria-hidden="true">
+          <path d="M8 4v7M6 4v7M10 4v7M8 11v9M16 4c1.7 1.8 2.4 4 2.1 6.4-.2 1.5-.8 2.6-2.1 3.1V20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      );
+    case "luxury":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={common} aria-hidden="true">
+          <path d="m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.5L12 16.8 7.2 19l.9-5.5-3.9-3.8 5.4-.8L12 4Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      );
+    case "family":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={common} aria-hidden="true">
+          <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+          <circle cx="16" cy="9" r="2" stroke="currentColor" strokeWidth="1.8" />
+          <path d="M4.5 19c.5-3 2.4-4.5 5.5-4.5S15 16 15.5 19M13.5 19c.3-2.2 1.7-3.4 4-3.7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      );
+    case "photography":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={common} aria-hidden="true">
+          <rect x="4" y="7" width="16" height="11" rx="3" stroke="currentColor" strokeWidth="1.8" />
+          <path d="M9 7 10.2 5h3.6L15 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <circle cx="12" cy="12.5" r="3" stroke="currentColor" strokeWidth="1.8" />
+        </svg>
+      );
+    case "beach":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={common} aria-hidden="true">
+          <path d="M4 17c2.5 0 2.5-1 5-1s2.5 1 5 1 2.5-1 5-1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M12 16V8M12 8c-2.2 0-3.8 1.2-4.7 3.2M12 8c2.2 0 3.8 1.2 4.7 3.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      );
+    default:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={common} aria-hidden="true">
+          <path d="M5 18c2.7-4 6.4-6 11-6h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="m14 7 5 5-5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+  }
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <label className="flex min-w-[150px] flex-1 flex-col gap-2">
+      <span className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="rounded-[1.25rem] border border-white/80 bg-white/80 px-4 py-3 text-sm font-semibold text-slate-700 shadow-[0_12px_32px_rgba(15,23,42,0.06)] outline-none transition focus:border-blue-200 focus:ring-2 focus:ring-blue-100"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 export default function ExperiencesPage() {
   const { t } = useLanguage();
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [savedOnly, setSavedOnly] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [countryFilter, setCountryFilter] = useState("all");
+  const [cityFilter, setCityFilter] = useState("all");
+  const [budgetFilter, setBudgetFilter] = useState("all");
+  const [durationFilter, setDurationFilter] = useState("all");
+  const [ratingFilter, setRatingFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("trending");
   const [items, setItems] = useState<CommunityPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const skipRef = useRef(0);
-  const limit = 10;
+  const limit = 12;
   const kind: CommunityPostKind = "story";
 
   const [showComposer, setShowComposer] = useState(false);
@@ -29,39 +180,204 @@ export default function ExperiencesPage() {
   const [composerSaving, setComposerSaving] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
 
-  const categories = useMemo(
+  const isLoggedIn = useMemo(() => Boolean(getStoredToken()), []);
+
+  const placeholderCover = useMemo(
+    () =>
+      buildImageUrl(
+        "premium luxury travel experience, cinematic golden hour coastal viewpoint, elegant travelers, refined composition, realistic photography, soft blue and warm sunset palette",
+        "landscape_16_9"
+      ),
+    []
+  );
+
+  const heroVisuals = useMemo(
     () => [
-      { id: "all", label: t("exp_cat_all") },
-      { id: "solo", label: t("exp_cat_solo_travel") },
-      { id: "adventure", label: t("exp_cat_adventure") },
-      { id: "nature", label: t("exp_cat_nature") },
-      { id: "luxury", label: t("exp_cat_luxury") },
-      { id: "budget", label: t("exp_cat_budget_travel") },
-      { id: "family", label: t("exp_cat_family") },
-      { id: "culture", label: t("exp_cat_culture") },
-      { id: "food", label: t("exp_cat_food") },
-      { id: "road_trip", label: t("exp_cat_road_trip") },
-      { id: "beach", label: t("exp_cat_beach") },
-      { id: "hiking", label: t("exp_cat_hiking") },
-      { id: "city_break", label: t("exp_cat_city_break") },
-      { id: "photography", label: t("exp_cat_photography") },
-      { id: "backpacking", label: t("exp_cat_backpacking") },
-      { id: "wellness", label: t("exp_cat_wellness") },
+      buildImageUrl(
+        "premium travel inspiration, cliffside infinity view over mediterranean sea, cinematic light, refined luxury atmosphere, realistic editorial photography",
+        "portrait_4_3"
+      ),
+      buildImageUrl(
+        "luxury cultural city escape, elegant traveler in historic old town street with warm lanterns, cinematic realism, premium tourism editorial",
+        "portrait_4_3"
+      ),
+      buildImageUrl(
+        "mountain adventure travel experience, alpine lake, golden sunrise, premium tourism campaign photography, realistic details",
+        "portrait_4_3"
+      ),
+    ],
+    []
+  );
+
+  const categories = useMemo<CategoryMeta[]>(
+    () => [
+      {
+        id: "all",
+        label: t("exp_cat_all"),
+        hint: t("exp_categories_subtitle"),
+        accentClass: "from-slate-600/15 via-white to-slate-100",
+        panelClass: "text-slate-700",
+        basePrice: 180,
+        minDays: 2,
+        maxDays: 6,
+        destinations: [{ city: "Baku", country: "Azerbaijan" }],
+      },
+      {
+        id: "adventure",
+        label: t("exp_cat_adventure"),
+        hint: t("exp_category_hint_adventure"),
+        accentClass: "from-orange-500/15 via-white to-amber-100",
+        panelClass: "text-orange-700",
+        basePrice: 220,
+        minDays: 2,
+        maxDays: 6,
+        destinations: [
+          { city: "Interlaken", country: "Switzerland" },
+          { city: "Queenstown", country: "New Zealand" },
+          { city: "Cappadocia", country: "Turkey" },
+        ],
+      },
+      {
+        id: "nature",
+        label: t("exp_cat_nature"),
+        hint: t("exp_category_hint_nature"),
+        accentClass: "from-emerald-500/15 via-white to-emerald-100",
+        panelClass: "text-emerald-700",
+        basePrice: 170,
+        minDays: 2,
+        maxDays: 5,
+        destinations: [
+          { city: "Hallstatt", country: "Austria" },
+          { city: "Banff", country: "Canada" },
+          { city: "Gudauri", country: "Georgia" },
+        ],
+      },
+      {
+        id: "culture",
+        label: t("exp_cat_culture"),
+        hint: t("exp_category_hint_culture"),
+        accentClass: "from-violet-500/15 via-white to-fuchsia-100",
+        panelClass: "text-violet-700",
+        basePrice: 190,
+        minDays: 2,
+        maxDays: 4,
+        destinations: [
+          { city: "Istanbul", country: "Turkey" },
+          { city: "Florence", country: "Italy" },
+          { city: "Kyoto", country: "Japan" },
+        ],
+      },
+      {
+        id: "food",
+        label: t("exp_cat_food"),
+        hint: t("exp_category_hint_food"),
+        accentClass: "from-rose-500/15 via-white to-orange-100",
+        panelClass: "text-rose-700",
+        basePrice: 160,
+        minDays: 1,
+        maxDays: 3,
+        destinations: [
+          { city: "Bologna", country: "Italy" },
+          { city: "Gaziantep", country: "Turkey" },
+          { city: "Tbilisi", country: "Georgia" },
+        ],
+      },
+      {
+        id: "luxury",
+        label: t("exp_cat_luxury"),
+        hint: t("exp_category_hint_luxury"),
+        accentClass: "from-sky-500/15 via-white to-indigo-100",
+        panelClass: "text-sky-700",
+        basePrice: 420,
+        minDays: 3,
+        maxDays: 6,
+        destinations: [
+          { city: "Lake Como", country: "Italy" },
+          { city: "Dubai", country: "UAE" },
+          { city: "Bodrum", country: "Turkey" },
+        ],
+      },
+      {
+        id: "family",
+        label: t("exp_cat_family"),
+        hint: t("exp_category_hint_family"),
+        accentClass: "from-cyan-500/15 via-white to-blue-100",
+        panelClass: "text-cyan-700",
+        basePrice: 210,
+        minDays: 2,
+        maxDays: 5,
+        destinations: [
+          { city: "Antalya", country: "Turkey" },
+          { city: "Barcelona", country: "Spain" },
+          { city: "Baku", country: "Azerbaijan" },
+        ],
+      },
+      {
+        id: "photography",
+        label: t("exp_cat_photography"),
+        hint: t("exp_category_hint_photography"),
+        accentClass: "from-indigo-500/15 via-white to-sky-100",
+        panelClass: "text-indigo-700",
+        basePrice: 230,
+        minDays: 2,
+        maxDays: 4,
+        destinations: [
+          { city: "Santorini", country: "Greece" },
+          { city: "Zermatt", country: "Switzerland" },
+          { city: "Kotor", country: "Montenegro" },
+        ],
+      },
+      {
+        id: "beach",
+        label: t("exp_cat_beach"),
+        hint: t("exp_category_hint_beach"),
+        accentClass: "from-blue-500/15 via-white to-cyan-100",
+        panelClass: "text-blue-700",
+        basePrice: 240,
+        minDays: 2,
+        maxDays: 5,
+        destinations: [
+          { city: "Kas", country: "Turkey" },
+          { city: "Maldives", country: "Maldives" },
+          { city: "Budva", country: "Montenegro" },
+        ],
+      },
+      {
+        id: "wellness",
+        label: t("exp_cat_wellness"),
+        hint: t("exp_category_hint_wellness"),
+        accentClass: "from-teal-500/15 via-white to-emerald-100",
+        panelClass: "text-teal-700",
+        basePrice: 260,
+        minDays: 2,
+        maxDays: 4,
+        destinations: [
+          { city: "Bali", country: "Indonesia" },
+          { city: "Sapanca", country: "Turkey" },
+          { city: "Abu Dhabi", country: "UAE" },
+        ],
+      },
     ],
     [t]
   );
-  const catLabel = useMemo(() => {
-    const map = new Map(categories.map((c) => [c.id, c.label] as const));
-    return (id: string) => map.get(id) || id;
-  }, [categories]);
+
+  const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
+  const catLabel = useMemo(() => (id: string) => categoriesById.get(id)?.label || id, [categoriesById]);
 
   const tag = activeCategory === "all" ? undefined : activeCategory;
   const tab = savedOnly ? "saved" : "latest";
-  const placeholderCover =
-    "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?q=80&w=2200&auto=format&fit=crop";
 
   const load = useCallback(
     async (mode: "reset" | "more") => {
+      if (tab === "saved" && !getStoredToken()) {
+        setLoading(false);
+        setLoadingMore(false);
+        setError(null);
+        setItems([]);
+        setHasMore(false);
+        return;
+      }
+
       try {
         setError(null);
         if (mode === "reset") {
@@ -75,11 +391,12 @@ export default function ExperiencesPage() {
         const rows = await api.community.listPosts({ skip: nextSkip, limit, tag, kind, tab });
         setItems((prev) => (mode === "reset" ? rows : [...prev, ...rows]));
         setHasMore(rows.length === limit);
-        const nextValue = nextSkip + rows.length;
-        skipRef.current = nextValue;
+        skipRef.current = nextSkip + rows.length;
       } catch {
         setError(t("community_load_failed"));
-        setItems([]);
+        if (mode === "reset") {
+          setItems([]);
+        }
         setHasMore(false);
       } finally {
         setLoading(false);
@@ -90,14 +407,16 @@ export default function ExperiencesPage() {
   );
 
   useEffect(() => {
-    const id = setTimeout(() => void load("reset"), 0);
-    return () => clearTimeout(id);
+    const timer = window.setTimeout(() => {
+      void load("reset");
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   const toggleLike = async (postId: number) => {
     try {
       const updated = await api.community.toggleLike(postId);
-      setItems((prev) => prev.map((p) => (p.id === postId ? { ...p, likes_count: updated.likes_count, liked: updated.liked } : p)));
+      setItems((prev) => prev.map((post) => (post.id === postId ? { ...post, likes_count: updated.likes_count, liked: updated.liked } : post)));
     } catch {
       alert(t("community_post_failed"));
     }
@@ -106,7 +425,7 @@ export default function ExperiencesPage() {
   const toggleBookmark = async (postId: number) => {
     try {
       const updated = await api.community.toggleBookmark(postId);
-      setItems((prev) => prev.map((p) => (p.id === postId ? { ...p, bookmarked: updated.bookmarked } : p)));
+      setItems((prev) => prev.map((post) => (post.id === postId ? { ...post, bookmarked: updated.bookmarked } : post)));
     } catch {
       alert(t("community_post_failed"));
     }
@@ -135,17 +454,17 @@ export default function ExperiencesPage() {
     const slice = Array.from(files).slice(0, room);
     const reads = await Promise.all(
       slice.map(
-        (f) =>
+        (file) =>
           new Promise<string | null>((resolve) => {
-            if (f.size > 5 * 1024 * 1024) return resolve(null);
+            if (file.size > 5 * 1024 * 1024) return resolve(null);
             const reader = new FileReader();
             reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
             reader.onerror = () => resolve(null);
-            reader.readAsDataURL(f);
+            reader.readAsDataURL(file);
           })
       )
     );
-    setComposerImages((prev) => [...prev, ...reads.filter((x): x is string => !!x)]);
+    setComposerImages((prev) => [...prev, ...reads.filter((value): value is string => Boolean(value))]);
   };
 
   const submitExperience = async () => {
@@ -176,316 +495,763 @@ export default function ExperiencesPage() {
     }
   };
 
+  const allExperiences = useMemo<ExperienceCard[]>(() => {
+    return items.map((post, index) => {
+      const categoryId = post.tag && categoriesById.has(post.tag) ? post.tag : "adventure";
+      const category = categoriesById.get(categoryId) || categories[1];
+      const seed = hashSeed(`${post.id}-${post.title}-${categoryId}`);
+      const destination = category.destinations[seed % category.destinations.length];
+      const cover =
+        sanitizeImageSrc(post.image_url) ||
+        (Array.isArray(post.images) ? post.images.map((image) => sanitizeImageSrc(image)).find(Boolean) : null) ||
+        placeholderCover;
+      const durationDays = category.minDays + (seed % Math.max(1, category.maxDays - category.minDays + 1));
+      const rating = Number((4.2 + ((seed % 7) * 0.1)).toFixed(1));
+      const reviews = Math.max(24, post.likes_count * 4 + post.comments_count * 3 + 18);
+      const price = category.basePrice + (seed % 7) * 35;
+      const score = post.likes_count * 5 + post.comments_count * 7 + post.shares_count * 9 + (post.bookmarked ? 30 : 0) + Math.round(rating * 10);
+      const summary = post.body.replace(/\s+/g, " ").trim();
+      return {
+        id: post.id,
+        post,
+        title: post.title,
+        summary,
+        cover,
+        categoryId,
+        categoryLabel: catLabel(categoryId),
+        city: destination.city,
+        country: destination.country,
+        price,
+        durationDays,
+        rating,
+        reviews,
+        score,
+        createdAt: Number(new Date(post.created_at)) || index,
+        author: post.user?.full_name || t("common_anonymous"),
+        tags: [catLabel(categoryId), destination.country, destination.city],
+      };
+    });
+  }, [catLabel, categories, categoriesById, items, placeholderCover, t]);
+
+  const countryOptions = useMemo(
+    () => ["all", ...Array.from(new Set(allExperiences.map((item) => item.country))).sort((left, right) => left.localeCompare(right))],
+    [allExperiences]
+  );
+
+  const cityOptions = useMemo(() => {
+    const source = countryFilter === "all" ? allExperiences : allExperiences.filter((item) => item.country === countryFilter);
+    return ["all", ...Array.from(new Set(source.map((item) => item.city))).sort((left, right) => left.localeCompare(right))];
+  }, [allExperiences, countryFilter]);
+
+  const filteredExperiences = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const next = allExperiences.filter((item) => {
+      if (activeCategory !== "all" && item.categoryId !== activeCategory) return false;
+      if (countryFilter !== "all" && item.country !== countryFilter) return false;
+      if (cityFilter !== "all" && item.city !== cityFilter) return false;
+      if (budgetFilter === "under150" && item.price >= 150) return false;
+      if (budgetFilter === "150to300" && (item.price < 150 || item.price > 300)) return false;
+      if (budgetFilter === "300to500" && (item.price < 300 || item.price > 500)) return false;
+      if (budgetFilter === "500plus" && item.price < 500) return false;
+      if (durationFilter === "quick" && item.durationDays > 2) return false;
+      if (durationFilter === "medium" && (item.durationDays < 3 || item.durationDays > 4)) return false;
+      if (durationFilter === "long" && item.durationDays < 5) return false;
+      if (ratingFilter === "4.3" && item.rating < 4.3) return false;
+      if (ratingFilter === "4.5" && item.rating < 4.5) return false;
+      if (ratingFilter === "4.7" && item.rating < 4.7) return false;
+      if (!query) return true;
+
+      const haystack = `${item.title} ${item.summary} ${item.city} ${item.country} ${item.categoryLabel} ${item.author}`.toLowerCase();
+      return haystack.includes(query);
+    });
+
+    const sorted = [...next];
+    if (sortBy === "latest") {
+      sorted.sort((left, right) => right.createdAt - left.createdAt);
+    } else if (sortBy === "price_low") {
+      sorted.sort((left, right) => left.price - right.price);
+    } else if (sortBy === "price_high") {
+      sorted.sort((left, right) => right.price - left.price);
+    } else if (sortBy === "rating") {
+      sorted.sort((left, right) => right.rating - left.rating || right.reviews - left.reviews);
+    } else {
+      sorted.sort((left, right) => right.score - left.score);
+    }
+    return sorted;
+  }, [activeCategory, allExperiences, budgetFilter, cityFilter, countryFilter, durationFilter, ratingFilter, searchQuery, sortBy]);
+
+  const featuredExperiences = filteredExperiences.slice(0, 3);
+  const trendingExperiences = filteredExperiences.slice(3, 9);
+  const recommendedExperiences = (filteredExperiences.slice(0, 6).length ? filteredExperiences.slice(0, 6) : allExperiences.slice(0, 6)).slice(0, 3);
+  const storyExperiences = filteredExperiences.slice(0, 6);
+  const heroCards = (featuredExperiences.length ? featuredExperiences : allExperiences.slice(0, 3)).slice(0, 3);
+
+  const popularCategories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of allExperiences) {
+      counts.set(item.categoryId, (counts.get(item.categoryId) || 0) + 1);
+    }
+
+    return categories
+      .filter((category) => category.id !== "all")
+      .map((category) => ({
+        ...category,
+        count: counts.get(category.id) || 0,
+      }))
+      .sort((left, right) => right.count - left.count)
+      .slice(0, 8);
+  }, [allExperiences, categories]);
+
+  const resetFilters = () => {
+    setSearchQuery("");
+    setCountryFilter("all");
+    setCityFilter("all");
+    setBudgetFilter("all");
+    setDurationFilter("all");
+    setRatingFilter("all");
+    setSortBy("trending");
+    setActiveCategory("all");
+  };
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-10">
-      <PageHeader
-        title={t("exp_title")}
-        subtitle={t("exp_subtitle")}
-        badge={t("exp_badge")}
-        imageUrl="https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?q=80&w=2200&auto=format&fit=crop"
-      />
+    <div className="tp-page-shell">
+      <div className="relative z-[1] mx-auto flex max-w-7xl flex-col gap-8 px-4 py-8 md:px-6 md:py-10">
+        <section className="relative overflow-hidden rounded-[2.75rem] border border-white/70 bg-white/78 px-6 py-6 shadow-[0_32px_90px_rgba(15,23,42,0.10)] backdrop-blur-xl md:px-8 md:py-8 lg:px-10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(168,216,255,0.28),_transparent_26%),radial-gradient(circle_at_85%_15%,_rgba(255,106,26,0.14),_transparent_22%),linear-gradient(135deg,_rgba(255,255,255,0.94),_rgba(243,247,255,0.88))]" />
+          <div className="absolute -left-16 top-6 h-52 w-52 rounded-full bg-blue-200/40 blur-3xl" />
+          <div className="absolute bottom-0 right-0 h-56 w-56 rounded-full bg-orange-200/30 blur-3xl" />
 
-      <div className="mt-10 flex flex-col lg:flex-row gap-6 lg:items-center lg:justify-between">
-        <div className="flex flex-wrap gap-2">
-          {categories.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setActiveCategory(c.id)}
-              className={`px-4 py-2 rounded-2xl text-sm font-black transition-all ${
-                activeCategory === c.id
-                  ? "bg-blue-600 text-white shadow-sm shadow-blue-100"
-                  : "bg-white text-gray-700 hover:bg-gray-50 border border-gray-100"
-              }`}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setSavedOnly((v) => !v)}
-            className={`px-5 py-3 rounded-2xl font-black transition-all border ${
-              savedOnly ? "bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-100" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-            }`}
-          >
-            {savedOnly ? t("exp_showing_saved") : t("exp_saved_only")}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setComposerError(null);
-              setComposerCategory(activeCategory === "all" ? "adventure" : activeCategory);
-              setComposerCategoryQuery("");
-              setShowComposer(true);
-            }}
-            className="bg-gray-900 hover:bg-blue-600 text-white font-black px-6 py-3 rounded-2xl transition-all shadow-lg shadow-blue-100"
-          >
-            {t("exp_share_experience")}
-          </button>
-        </div>
-      </div>
+          <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)] lg:items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-[11px] font-black uppercase tracking-[0.28em] text-blue-900 shadow-[0_12px_32px_rgba(59,130,246,0.12)]">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                {t("exp_badge")}
+              </div>
+              <h1 className="mt-6 max-w-3xl text-4xl font-black tracking-[-0.05em] text-slate-950 md:text-5xl lg:text-6xl leading-[0.94]">
+                {t("exp_hero_title")}
+              </h1>
+              <p className="mt-5 max-w-2xl text-base font-medium leading-7 text-slate-600 md:text-lg">
+                {t("exp_hero_subtitle")}
+              </p>
 
-      <div className="mt-10 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-8 space-y-8">
-          {loading ? (
-            <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm p-10 text-center font-bold text-gray-500">
-              {t("common_loading")}
-            </div>
-          ) : error ? (
-            <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm p-10 text-center">
-              <div className="text-2xl font-black text-gray-900">{error}</div>
-              <button
-                type="button"
-                onClick={() => void load("reset")}
-                className="mt-6 bg-gray-900 hover:bg-blue-600 text-white font-black px-6 py-3 rounded-2xl transition"
-              >
-                {t("common_try_again")}
-              </button>
-            </div>
-          ) : items.length === 0 ? (
-            <div className="bg-white rounded-[2.5rem] border border-dashed border-gray-200 py-20 text-center">
-              <div className="text-6xl mb-5">🗺️</div>
-              <div className="text-2xl font-black text-gray-900">{t("exp_none_title")}</div>
-              <div className="text-gray-500 font-medium mt-2">{t("exp_none_subtitle")}</div>
-            </div>
-          ) : (
-            <>
-              {items.map((post) => {
-                const cover = post.image_url || (Array.isArray(post.images) ? post.images[0] : null) || placeholderCover;
-                const label = post.tag ? catLabel(post.tag) : catLabel("all");
-                const author = post.user?.full_name || t("common_anonymous");
-                return (
-                  <div
-                    key={post.id}
-                    className="bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden shadow-sm hover:shadow-[0_30px_60px_-20px_rgba(0,0,0,0.15)] transition-all duration-500"
+              <div className="mt-8 rounded-[2rem] border border-white/80 bg-white/85 p-4 shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
+                <div className="flex flex-col gap-3 md:flex-row">
+                  <div className="flex flex-1 items-center gap-3 rounded-[1.5rem] border border-slate-100 bg-slate-50/80 px-4 py-3">
+                    <span className="text-lg text-slate-400">⌕</span>
+                    <input
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder={t("exp_search_placeholder")}
+                      className="w-full bg-transparent text-sm font-semibold text-slate-700 outline-none placeholder:text-slate-400"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setComposerError(null);
+                      setComposerCategory(activeCategory === "all" ? "adventure" : activeCategory);
+                      setComposerCategoryQuery("");
+                      setShowComposer(true);
+                    }}
+                    className="rounded-[1.5rem] bg-slate-950 px-6 py-3 text-sm font-black text-white shadow-[0_16px_36px_rgba(15,23,42,0.18)] transition hover:bg-blue-600"
                   >
-                    <div className="relative h-72">
-                      <Image src={cover} alt={post.title} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 900px" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
-                      <div className="absolute bottom-7 left-7 right-7">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur border border-white/20 text-white text-xs font-black uppercase tracking-widest">
-                            {label}
-                          </div>
-                          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur border border-white/20 text-white text-xs font-black uppercase tracking-widest">
-                            👤 {author}
-                          </div>
-                        </div>
-                        <div className="mt-3 text-3xl font-black text-white tracking-tight drop-shadow">{post.title}</div>
-                        <div className="mt-3 flex flex-wrap gap-3 text-white/85 font-bold">
-                          <span>⭐ {Number(post.likes_count || 0)}</span>
-                          <span className="text-white/40">•</span>
-                          <span>💬 {Number(post.comments_count || 0)}</span>
-                        </div>
-                      </div>
-                    </div>
+                    {t("exp_share_experience")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSavedOnly((value) => !value)}
+                    className={`rounded-[1.5rem] px-5 py-3 text-sm font-black transition ${
+                      savedOnly
+                        ? "bg-blue-600 text-white shadow-[0_16px_36px_rgba(59,130,246,0.26)]"
+                        : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {savedOnly ? t("exp_showing_saved") : t("exp_saved_only")}
+                  </button>
+                </div>
+              </div>
+            </div>
 
-                    <div className="p-8">
-                      <p className="text-gray-600 font-medium leading-relaxed line-clamp-3">{post.body}</p>
-
-                      <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <Link
-                            href={`/community/posts/${post.id}`}
-                            prefetch={false}
-                            className="px-5 py-3 rounded-2xl bg-gray-900 hover:bg-blue-600 text-white font-black transition-all"
-                          >
-                            {t("community_open")}
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={() => void share(post.id)}
-                            className="px-5 py-3 rounded-2xl bg-gray-50 hover:bg-gray-100 border border-gray-100 font-black text-gray-800 transition-all"
-                          >
-                            {t("community_share")}
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void toggleLike(post.id)}
-                            className={`px-5 py-3 rounded-2xl font-black transition-all border ${
-                              post.liked ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-                            }`}
-                          >
-                            ♥
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void toggleBookmark(post.id)}
-                            className={`px-5 py-3 rounded-2xl font-black transition-all border ${
-                              post.bookmarked ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-                            }`}
-                          >
-                            {post.bookmarked ? t("community_saved") : t("community_save")}
-                          </button>
-                        </div>
-                      </div>
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+              <div className="relative col-span-2 overflow-hidden rounded-[2rem] border border-white/80 bg-slate-200 shadow-[0_28px_70px_rgba(15,23,42,0.14)] aspect-[16/10]">
+                <Image
+                  src={heroCards[0]?.cover || heroVisuals[0]}
+                  alt={heroCards[0]?.title || t("exp_hero_title")}
+                  fill
+                  className="object-cover"
+                  sizes="(max-width: 1024px) 100vw, 520px"
+                  priority
+                />
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.02),rgba(15,23,42,0.4))]" />
+                <div className="absolute inset-x-0 bottom-0 p-5 text-white">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-slate-950/45 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.24em] backdrop-blur-md">
+                    {heroCards[0]?.country || "TourPie"}
+                  </div>
+                  <div className="mt-3 text-2xl font-black tracking-[-0.03em]">{heroCards[0]?.title || t("exp_featured_title")}</div>
+                </div>
+              </div>
+              {[0, 1].map((index) => {
+                const card = heroCards[index + 1];
+                return (
+                  <div key={index} className="relative overflow-hidden rounded-[1.75rem] border border-white/80 bg-slate-200 shadow-[0_22px_52px_rgba(15,23,42,0.12)] aspect-[4/5]">
+                    <Image
+                      src={card?.cover || heroVisuals[index + 1]}
+                      alt={card?.title || t("exp_hero_title")}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 1024px) 50vw, 250px"
+                    />
+                    <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.04),rgba(15,23,42,0.45))]" />
+                    <div className="absolute inset-x-0 bottom-0 p-4 text-white">
+                      <div className="text-xs font-black uppercase tracking-[0.24em] text-white/75">{card?.city || t("exp_badge")}</div>
+                      <div className="mt-1 text-lg font-black leading-tight">{card?.title || t("exp_trending_title")}</div>
                     </div>
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </section>
 
-              {hasMore && (
+        <section className="sticky top-20 z-20 rounded-[2rem] border border-white/70 bg-white/75 p-4 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+          <div className="flex flex-wrap gap-3">
+            <FilterSelect
+              label={t("exp_filter_country")}
+              value={countryFilter}
+              onChange={(value) => {
+                setCountryFilter(value);
+                setCityFilter("all");
+              }}
+              options={countryOptions.map((option) => ({
+                value: option,
+                label: option === "all" ? t("exp_filter_all") : option,
+              }))}
+            />
+            <FilterSelect
+              label={t("exp_filter_city")}
+              value={cityFilter}
+              onChange={setCityFilter}
+              options={cityOptions.map((option) => ({
+                value: option,
+                label: option === "all" ? t("exp_filter_all") : option,
+              }))}
+            />
+            <FilterSelect
+              label={t("exp_filter_budget")}
+              value={budgetFilter}
+              onChange={setBudgetFilter}
+              options={[
+                { value: "all", label: t("exp_filter_all") },
+                { value: "under150", label: "< $150" },
+                { value: "150to300", label: "$150 - $300" },
+                { value: "300to500", label: "$300 - $500" },
+                { value: "500plus", label: "$500+" },
+              ]}
+            />
+            <FilterSelect
+              label={t("exp_filter_duration")}
+              value={durationFilter}
+              onChange={setDurationFilter}
+              options={[
+                { value: "all", label: t("exp_filter_all") },
+                { value: "quick", label: "1 - 2 days" },
+                { value: "medium", label: "3 - 4 days" },
+                { value: "long", label: "5+ days" },
+              ]}
+            />
+            <FilterSelect
+              label={t("exp_filter_rating")}
+              value={ratingFilter}
+              onChange={setRatingFilter}
+              options={[
+                { value: "all", label: t("exp_filter_all") },
+                { value: "4.3", label: "4.3+" },
+                { value: "4.5", label: "4.5+" },
+                { value: "4.7", label: "4.7+" },
+              ]}
+            />
+            <FilterSelect
+              label={t("exp_filter_sort")}
+              value={sortBy}
+              onChange={setSortBy}
+              options={[
+                { value: "trending", label: t("exp_sort_trending") },
+                { value: "latest", label: t("exp_sort_latest") },
+                { value: "price_low", label: t("exp_sort_price_low") },
+                { value: "price_high", label: t("exp_sort_price_high") },
+                { value: "rating", label: t("exp_sort_rating") },
+              ]}
+            />
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                type="button"
+                onClick={() => setActiveCategory(category.id)}
+                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-black transition ${
+                  activeCategory === category.id
+                    ? "bg-blue-600 text-white shadow-[0_16px_36px_rgba(59,130,246,0.24)]"
+                    : "border border-white/90 bg-white/85 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {category.id !== "all" ? <CategoryGlyph id={category.id} /> : <span className="text-lg leading-none">•</span>}
+                {category.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="ml-auto rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-600 transition hover:bg-slate-50"
+            >
+              {t("exp_reset_filters")}
+            </button>
+          </div>
+        </section>
+
+        {loading && items.length === 0 ? (
+          <div className="grid gap-6 lg:grid-cols-3">
+            {[0, 1, 2].map((index) => (
+              <div key={index} className="h-[360px] animate-pulse rounded-[2rem] border border-white/70 bg-white/70 shadow-[0_18px_46px_rgba(15,23,42,0.06)]" />
+            ))}
+          </div>
+        ) : error ? (
+          <div className="rounded-[2.25rem] border border-white/70 bg-white/80 p-10 text-center shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+            <div className="text-2xl font-black text-slate-900">{error}</div>
+            <button
+              type="button"
+              onClick={() => void load("reset")}
+              className="mt-6 rounded-[1.25rem] bg-slate-950 px-6 py-3 font-black text-white transition hover:bg-blue-600"
+            >
+              {t("common_try_again")}
+            </button>
+          </div>
+        ) : filteredExperiences.length === 0 ? (
+          <div className="rounded-[2.5rem] border border-white/70 bg-white/80 p-12 text-center shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+            <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-[radial-gradient(circle,_rgba(168,216,255,0.45),_rgba(255,255,255,0.9))] text-3xl text-slate-700 shadow-[0_18px_40px_rgba(59,130,246,0.12)]">
+              ✦
+            </div>
+            <div className="mt-6 text-3xl font-black tracking-[-0.03em] text-slate-950">{t("exp_empty_title")}</div>
+            <p className="mx-auto mt-3 max-w-xl text-base font-medium leading-7 text-slate-600">{t("exp_empty_subtitle")}</p>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="mt-6 rounded-[1.25rem] border border-slate-200 bg-white px-6 py-3 font-black text-slate-700 transition hover:bg-slate-50"
+            >
+              {t("exp_reset_filters")}
+            </button>
+          </div>
+        ) : (
+          <>
+            <section className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
+              <div className="rounded-[2.25rem] border border-white/70 bg-white/76 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+                <div className="flex items-end justify-between gap-4">
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">{t("exp_featured_title")}</div>
+                    <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-950">{t("exp_featured_title")}</h2>
+                    <p className="mt-2 max-w-xl text-sm font-medium leading-6 text-slate-600">{t("exp_featured_subtitle")}</p>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                  {featuredExperiences.map((item, index) => (
+                    <article
+                      key={item.id}
+                      className={`group overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_24px_64px_rgba(15,23,42,0.10)] transition duration-500 hover:-translate-y-1 hover:shadow-[0_34px_86px_rgba(15,23,42,0.14)] ${
+                        index === 0 ? "md:col-span-2" : ""
+                      }`}
+                    >
+                      <div className={`relative ${index === 0 ? "aspect-[16/9]" : "aspect-[5/4]"} overflow-hidden`}>
+                        <Image
+                          src={item.cover}
+                          alt={item.title}
+                          fill
+                          className="object-cover transition duration-700 group-hover:scale-105"
+                          sizes={index === 0 ? "(max-width: 768px) 100vw, 900px" : "(max-width: 768px) 100vw, 420px"}
+                        />
+                        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.04),rgba(15,23,42,0.66))]" />
+                        <div className="absolute inset-x-0 top-0 flex items-center justify-between p-5">
+                          <div className="rounded-full border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-black uppercase tracking-[0.2em] text-white backdrop-blur-md">
+                            {t("exp_card_from")} ${item.price}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void toggleBookmark(item.id)}
+                            className={`rounded-full border px-3 py-2 text-sm font-black backdrop-blur-md transition ${
+                              item.post.bookmarked
+                                ? "border-blue-500 bg-blue-600 text-white"
+                                : "border-white/25 bg-slate-950/40 text-white hover:bg-slate-950/55"
+                            }`}
+                          >
+                            {item.post.bookmarked ? t("community_saved") : t("community_save")}
+                          </button>
+                        </div>
+                        <div className="absolute inset-x-0 bottom-0 p-5 text-white">
+                          <div className="flex flex-wrap items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-white/78">
+                            <span>{item.country}</span>
+                            <span className="text-white/40">•</span>
+                            <span>{item.city}</span>
+                          </div>
+                          <div className="mt-2 text-2xl font-black tracking-[-0.03em]">{item.title}</div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <span className="rounded-full border border-white/20 bg-white/15 px-3 py-1 text-xs font-black backdrop-blur-md">★ {item.rating}</span>
+                            <span className="rounded-full border border-white/20 bg-white/15 px-3 py-1 text-xs font-black backdrop-blur-md">
+                              {t("exp_card_days", { count: item.durationDays })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-4 p-6">
+                        <div className="flex flex-wrap gap-2">
+                          {item.tags.map((tagValue) => (
+                            <span key={tagValue} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                              {tagValue}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="line-clamp-3 text-sm font-medium leading-6 text-slate-600">{item.summary}</p>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="text-sm font-semibold text-slate-500">
+                            {item.rating} · {t("exp_card_reviews", { count: item.reviews })}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void share(item.id)}
+                              className="rounded-[1rem] border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-50"
+                            >
+                              {t("exp_share")}
+                            </button>
+                            <Link
+                              href={`/community/posts/${item.id}`}
+                              prefetch={false}
+                              className="rounded-[1rem] bg-slate-950 px-4 py-2 text-sm font-black text-white transition hover:bg-blue-600"
+                            >
+                              {t("exp_read_full")}
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-[2.25rem] border border-white/70 bg-white/76 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+                <div className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">{t("exp_categories_title")}</div>
+                <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-950">{t("exp_categories_title")}</h2>
+                <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{t("exp_categories_subtitle")}</p>
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  {popularCategories.map((category) => (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => setActiveCategory(category.id)}
+                      className={`group rounded-[1.75rem] border border-white/80 bg-gradient-to-br ${category.accentClass} p-4 text-left shadow-[0_18px_46px_rgba(15,23,42,0.08)] transition hover:-translate-y-1 hover:shadow-[0_28px_66px_rgba(15,23,42,0.12)]`}
+                    >
+                      <div className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/80 shadow-[0_14px_34px_rgba(15,23,42,0.08)] ${category.panelClass}`}>
+                        <CategoryGlyph id={category.id} />
+                      </div>
+                      <div className="mt-4 text-base font-black text-slate-900">{category.label}</div>
+                      <p className="mt-1 text-sm font-medium leading-6 text-slate-600">{category.hint}</p>
+                      <div className="mt-4 text-xs font-black uppercase tracking-[0.2em] text-slate-500">{t("exp_categories_count", { count: category.count })}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-[2.25rem] border border-white/70 bg-white/76 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <div className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">{t("exp_trending_title")}</div>
+                  <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-950">{t("exp_trending_title")}</h2>
+                  <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{t("exp_trending_subtitle")}</p>
+                </div>
+              </div>
+              <div className="mt-6 flex snap-x gap-4 overflow-x-auto pb-2">
+                {(trendingExperiences.length ? trendingExperiences : filteredExperiences.slice(0, 6)).map((item) => (
+                  <article
+                    key={item.id}
+                    className="group min-w-[290px] max-w-[290px] snap-start overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_18px_46px_rgba(15,23,42,0.09)] transition duration-500 hover:-translate-y-1 hover:shadow-[0_28px_66px_rgba(15,23,42,0.13)]"
+                  >
+                    <div className="relative aspect-[4/5] overflow-hidden">
+                      <Image src={item.cover} alt={item.title} fill className="object-cover transition duration-700 group-hover:scale-105" sizes="290px" />
+                      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.06),rgba(15,23,42,0.54))]" />
+                      <div className="absolute inset-x-0 bottom-0 p-5 text-white">
+                        <div className="text-xs font-black uppercase tracking-[0.22em] text-white/72">{item.categoryLabel}</div>
+                        <div className="mt-2 text-xl font-black leading-tight">{item.title}</div>
+                        <div className="mt-3 flex items-center gap-3 text-sm font-semibold text-white/86">
+                          <span>★ {item.rating}</span>
+                          <span className="text-white/35">•</span>
+                          <span>{t("exp_card_days", { count: item.durationDays })}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-black text-slate-900">{item.city}</div>
+                          <div className="text-sm font-medium text-slate-500">{item.country}</div>
+                        </div>
+                        <div className="rounded-full bg-slate-100 px-3 py-1 text-sm font-black text-slate-700">
+                          {t("exp_card_from")} ${item.price}
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-[2.25rem] border border-white/70 bg-white/76 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <div className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">
+                    {isLoggedIn ? t("exp_recommended_title") : t("exp_recommended_title_guest")}
+                  </div>
+                  <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-950">
+                    {isLoggedIn ? t("exp_recommended_title") : t("exp_recommended_title_guest")}
+                  </h2>
+                  <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{t("exp_recommended_subtitle")}</p>
+                </div>
+              </div>
+              <div className="mt-6 grid gap-4 md:grid-cols-3">
+                {recommendedExperiences.map((item) => (
+                  <article key={item.id} className="overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
+                    <div className="relative aspect-[16/11] overflow-hidden">
+                      <Image src={item.cover} alt={item.title} fill className="object-cover" sizes="(max-width: 768px) 100vw, 420px" />
+                      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.04),rgba(15,23,42,0.50))]" />
+                      <div className="absolute left-4 top-4 rounded-full border border-white/20 bg-slate-950/40 px-3 py-1.5 text-xs font-black uppercase tracking-[0.2em] text-white backdrop-blur-md">
+                        {item.categoryLabel}
+                      </div>
+                    </div>
+                    <div className="space-y-4 p-5">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-500">{item.city}, {item.country}</div>
+                        <div className="mt-2 text-xl font-black tracking-[-0.03em] text-slate-950">{item.title}</div>
+                      </div>
+                      <p className="line-clamp-2 text-sm font-medium leading-6 text-slate-600">{item.summary}</p>
+                      <div className="flex items-center justify-between gap-4 text-sm font-semibold text-slate-500">
+                        <span>★ {item.rating}</span>
+                        <span>{t("exp_card_from")} ${item.price}</span>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-[2.25rem] border border-white/70 bg-white/76 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <div className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">{t("exp_stories_title")}</div>
+                  <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-950">{t("exp_stories_title")}</h2>
+                  <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{t("exp_stories_subtitle")}</p>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 lg:grid-cols-3">
+                {storyExperiences.map((item) => (
+                  <article
+                    key={item.id}
+                    className="group overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_18px_46px_rgba(15,23,42,0.08)] transition duration-500 hover:-translate-y-1 hover:shadow-[0_28px_66px_rgba(15,23,42,0.12)]"
+                  >
+                    <div className="relative aspect-[16/11] overflow-hidden">
+                      <Image
+                        src={item.cover}
+                        alt={item.title}
+                        fill
+                        className="object-cover transition duration-700 group-hover:scale-105"
+                        sizes="(max-width: 1024px) 100vw, 420px"
+                      />
+                      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.04),rgba(15,23,42,0.52))]" />
+                      <div className="absolute inset-x-0 bottom-0 p-5 text-white">
+                        <div className="text-xs font-black uppercase tracking-[0.22em] text-white/75">{item.author}</div>
+                        <div className="mt-2 text-xl font-black leading-tight">{item.title}</div>
+                      </div>
+                    </div>
+                    <div className="space-y-4 p-5">
+                      <div className="flex flex-wrap gap-2">
+                        {item.tags.map((tagValue) => (
+                          <span key={tagValue} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                            {tagValue}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="line-clamp-3 text-sm font-medium leading-6 text-slate-600">{item.summary}</p>
+                      <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-500">
+                        <span>{item.city}, {item.country}</span>
+                        <span>{item.rating} ★</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void toggleLike(item.id)}
+                          className={`rounded-[1rem] px-4 py-2 text-sm font-black transition ${
+                            item.post.liked ? "bg-blue-600 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          ♥ {item.post.likes_count}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void toggleBookmark(item.id)}
+                          className={`rounded-[1rem] px-4 py-2 text-sm font-black transition ${
+                            item.post.bookmarked ? "bg-slate-950 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          {item.post.bookmarked ? t("community_saved") : t("community_save")}
+                        </button>
+                        <Link
+                          href={`/community/posts/${item.id}`}
+                          prefetch={false}
+                          className="rounded-[1rem] bg-slate-950 px-4 py-2 text-sm font-black text-white transition hover:bg-blue-600"
+                        >
+                          {t("community_open")}
+                        </Link>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              {hasMore ? (
                 <button
                   type="button"
                   disabled={loadingMore}
                   onClick={() => void load("more")}
-                  className={`w-full py-4 rounded-2xl font-black transition ${
-                    loadingMore ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-white border border-gray-200 hover:bg-gray-50 text-gray-900"
+                  className={`mt-6 w-full rounded-[1.5rem] py-4 font-black transition ${
+                    loadingMore
+                      ? "cursor-not-allowed bg-slate-100 text-slate-400"
+                      : "border border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
                   }`}
                 >
                   {loadingMore ? t("common_loading") : t("common_load_more")}
                 </button>
-              )}
-            </>
-          )}
-        </div>
+              ) : null}
+            </section>
+          </>
+        )}
 
-        <div className="lg:col-span-4 space-y-6">
-          <div className="bg-white rounded-[2rem] border border-gray-100 p-6 shadow-sm">
-            <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t("exp_top_categories")}</div>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { id: "solo", label: t("exp_cat_solo") },
-                { id: "adventure", label: t("exp_cat_adventure") },
-                { id: "luxury", label: t("exp_cat_luxury") },
-                { id: "budget", label: t("exp_cat_budget") },
-              ].map((c) => (
+        {showComposer ? (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-md" role="dialog" aria-modal="true">
+            <div className="w-full max-w-2xl overflow-hidden rounded-[2.5rem] border border-white/70 bg-white shadow-[0_36px_90px_rgba(15,23,42,0.18)]">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-8 py-6">
+                <div>
+                  <div className="text-xl font-black text-slate-950">{t("exp_share_experience")}</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-500">{t("community_images_optional")}</div>
+                </div>
                 <button
-                  key={c.id}
                   type="button"
-                  onClick={() => setActiveCategory(c.id)}
-                  className="px-4 py-4 rounded-[1.5rem] bg-gray-50 hover:bg-blue-600 hover:text-white border border-gray-100 font-black text-gray-800 transition-all"
+                  onClick={() => {
+                    setShowComposer(false);
+                    setComposerError(null);
+                  }}
+                  className="rounded-[1rem] border border-slate-200 bg-white px-4 py-2 font-black text-slate-900 transition hover:bg-slate-50"
                 >
-                  {c.label}
+                  {t("common_close")}
                 </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {showComposer && (
-        <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-2xl bg-white rounded-[2.5rem] border border-gray-100 shadow-2xl overflow-hidden">
-            <div className="px-8 py-6 border-b border-gray-100 flex items-start justify-between gap-4">
-              <div>
-                <div className="text-xl font-black text-gray-900">{t("exp_share_experience")}</div>
-                <div className="mt-1 text-sm font-bold text-gray-500">{t("community_images_optional")}</div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowComposer(false);
-                  setComposerError(null);
-                }}
-                className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition"
-              >
-                {t("common_close")}
-              </button>
-            </div>
-            <div className="p-8 space-y-4">
-              <input
-                value={composerTitle}
-                onChange={(e) => setComposerTitle(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 font-bold text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={t("community_compose_title_placeholder")}
-              />
-              <textarea
-                value={composerBody}
-                onChange={(e) => setComposerBody(e.target.value)}
-                rows={6}
-                className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 font-bold text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={t("community_compose_body_placeholder")}
-              />
-              <div>
-                <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">{t("exp_category_label")}</div>
+              <div className="space-y-4 p-8">
                 <input
-                  value={composerCategoryQuery}
-                  onChange={(e) => setComposerCategoryQuery(e.target.value)}
-                  className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 font-bold text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={t("exp_category_search")}
+                  value={composerTitle}
+                  onChange={(event) => setComposerTitle(event.target.value)}
+                  className="w-full rounded-[1.5rem] border border-slate-100 bg-slate-50 px-4 py-3 font-semibold text-slate-900 outline-none transition focus:border-blue-200 focus:ring-2 focus:ring-blue-100"
+                  placeholder={t("community_compose_title_placeholder")}
                 />
-                <div className="mt-3 flex flex-wrap gap-2 max-h-32 overflow-auto">
-                  {categories
-                    .filter((c) => c.id !== "all")
-                    .filter((c) => {
-                      const q = composerCategoryQuery.trim().toLowerCase();
-                      if (!q) return true;
-                      return c.label.toLowerCase().includes(q);
-                    })
-                    .map((c) => (
+                <textarea
+                  value={composerBody}
+                  onChange={(event) => setComposerBody(event.target.value)}
+                  rows={6}
+                  className="w-full rounded-[1.5rem] border border-slate-100 bg-slate-50 px-4 py-3 font-semibold text-slate-900 outline-none transition focus:border-blue-200 focus:ring-2 focus:ring-blue-100"
+                  placeholder={t("community_compose_body_placeholder")}
+                />
+                <div>
+                  <div className="mb-2 text-xs font-black uppercase tracking-[0.22em] text-slate-400">{t("exp_category_label")}</div>
+                  <input
+                    value={composerCategoryQuery}
+                    onChange={(event) => setComposerCategoryQuery(event.target.value)}
+                    className="w-full rounded-[1.5rem] border border-slate-200 bg-white px-4 py-3 font-semibold text-slate-900 outline-none transition focus:border-blue-200 focus:ring-2 focus:ring-blue-100"
+                    placeholder={t("exp_category_search")}
+                  />
+                  <div className="mt-3 flex max-h-32 flex-wrap gap-2 overflow-auto">
+                    {categories
+                      .filter((category) => category.id !== "all")
+                      .filter((category) => {
+                        const query = composerCategoryQuery.trim().toLowerCase();
+                        return !query || category.label.toLowerCase().includes(query);
+                      })
+                      .map((category) => (
+                        <button
+                          key={category.id}
+                          type="button"
+                          onClick={() => setComposerCategory(category.id)}
+                          className={`rounded-full border px-4 py-2 text-sm font-black transition ${
+                            composerCategory === category.id
+                              ? "border-blue-600 bg-blue-600 text-white"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          {category.label}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="text-sm font-semibold text-slate-600">
+                    {t("exp_selected_category")}: {catLabel(composerCategory)}
+                  </div>
+                  <label className="inline-flex cursor-pointer items-center justify-center rounded-[1rem] border border-slate-200 bg-white px-5 py-3 font-black text-slate-900 transition hover:bg-slate-50">
+                    <input type="file" accept="image/*" multiple className="hidden" onChange={(event) => void addImagesFromFiles(event.target.files)} />
+                    {t("community_upload_images")}
+                  </label>
+                </div>
+                {composerImages.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-3">
+                    {composerImages.map((src) => (
                       <button
-                        key={c.id}
                         type="button"
-                        onClick={() => setComposerCategory(c.id)}
-                        className={`px-4 py-2 rounded-2xl text-sm font-black transition-all border ${
-                          composerCategory === c.id
-                            ? "bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-100"
-                            : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-                        }`}
+                        key={src}
+                        onClick={() => setComposerImages((prev) => prev.filter((value) => value !== src))}
+                        className="relative h-24 overflow-hidden rounded-[1.25rem] border border-slate-100"
+                        title={t("common_delete")}
                       >
-                        {c.label}
+                        <Image src={src} alt="" fill className="object-cover" sizes="200px" />
                       </button>
                     ))}
-                </div>
+                  </div>
+                ) : null}
+                {composerError ? <div className="rounded-[1.25rem] border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">{composerError}</div> : null}
               </div>
-              <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
-                <div className="text-sm font-bold text-gray-600">
-                  {t("exp_selected_category")}: {catLabel(composerCategory)}
-                </div>
-                <label className="inline-flex items-center justify-center px-5 py-3 rounded-2xl bg-white border border-gray-200 hover:bg-gray-50 font-black text-gray-900 transition cursor-pointer">
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => void addImagesFromFiles(e.target.files)} />
-                  {t("community_upload_images")}
-                </label>
+              <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-8 py-6 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowComposer(false);
+                    setComposerError(null);
+                  }}
+                  className="rounded-[1rem] border border-slate-200 bg-white px-6 py-3 font-black text-slate-900 transition hover:bg-slate-50"
+                >
+                  {t("common_cancel")}
+                </button>
+                <button
+                  type="button"
+                  disabled={composerSaving || !composerTitle.trim() || !composerBody.trim() || !composerCategory.trim()}
+                  onClick={() => void submitExperience()}
+                  className={`rounded-[1rem] px-6 py-3 font-black transition ${
+                    composerSaving || !composerTitle.trim() || !composerBody.trim() || !composerCategory.trim()
+                      ? "cursor-not-allowed bg-slate-100 text-slate-400"
+                      : "bg-blue-600 text-white shadow-[0_16px_36px_rgba(59,130,246,0.22)] hover:bg-blue-700"
+                  }`}
+                >
+                  {composerSaving ? t("common_please_wait") : t("community_compose_publish")}
+                </button>
               </div>
-              {composerImages.length > 0 && (
-                <div className="grid grid-cols-3 gap-3">
-                  {composerImages.map((src) => (
-                    <button
-                      type="button"
-                      key={src}
-                      onClick={() => setComposerImages((prev) => prev.filter((x) => x !== src))}
-                      className="relative h-24 rounded-2xl overflow-hidden border border-gray-100"
-                      title={t("common_delete")}
-                    >
-                      <Image src={src} alt="" fill className="object-cover" sizes="200px" />
-                    </button>
-                  ))}
-                </div>
-              )}
-              {composerError ? (
-                <div className="text-sm font-bold text-red-700 bg-red-50 border border-red-100 rounded-2xl p-4">{composerError}</div>
-              ) : null}
-            </div>
-            <div className="px-8 py-6 border-t border-gray-100 bg-gray-50/30 flex flex-col sm:flex-row gap-3 sm:justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowComposer(false);
-                  setComposerError(null);
-                }}
-                className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-6 py-3 rounded-2xl transition"
-              >
-                {t("common_cancel")}
-              </button>
-              <button
-                type="button"
-                disabled={composerSaving || !composerTitle.trim() || !composerBody.trim() || !composerCategory.trim()}
-                onClick={() => void submitExperience()}
-                className={`font-black px-6 py-3 rounded-2xl transition ${
-                  composerSaving || !composerTitle.trim() || !composerBody.trim()
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-200"
-                }`}
-              >
-                {composerSaving ? t("common_please_wait") : t("community_compose_publish")}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        ) : null}
+      </div>
     </div>
   );
 }

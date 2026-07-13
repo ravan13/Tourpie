@@ -1,4 +1,4 @@
-﻿const API_BASE_URL = "/api";
+const API_BASE_URL = "/api";
 
 const SESSION_COOKIE_NAME = "tourpie_token";
 export const SESSION_ACTIVITY_KEY = "tourpie:last_activity";
@@ -500,6 +500,13 @@ export interface User {
   role: string;
   phone_number?: string | null;
   country?: string | null;
+  preferred_language?: import("@/context/LanguageContext").Language | null;
+  preferred_currency?: import("@/context/LanguageContext").Currency | null;
+  time_zone?: string | null;
+  avatar_url?: string | null;
+  auth_provider?: string | null;
+  pending_email?: string | null;
+  last_login_at?: string | null;
   created_at?: string;
   is_verified?: boolean;
   is_email_verified?: boolean;
@@ -515,6 +522,19 @@ export interface User {
   agency_id?: number | null;
 }
 
+export interface UserSession {
+  session_id: string;
+  auth_provider?: string | null;
+  device_label?: string | null;
+  user_agent?: string | null;
+  ip_address?: string | null;
+  created_at: string;
+  last_seen_at?: string | null;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+  is_current: boolean;
+}
+
 export interface VerifyEmailRequest {
   email: string;
   code: string;
@@ -527,6 +547,21 @@ export interface VerifyPhoneRequest {
 
 export interface RequestVerificationRequest {
   email: string;
+  language?: import("@/context/LanguageContext").Language;
+}
+
+export interface UpdateProfileRequest {
+  full_name?: string | null;
+  phone_number?: string | null;
+  country?: string | null;
+  preferred_language?: import("@/context/LanguageContext").Language | null;
+  preferred_currency?: import("@/context/LanguageContext").Currency | null;
+  time_zone?: string | null;
+  avatar_url?: string | null;
+}
+
+export interface RequestEmailChangeRequest {
+  new_email: string;
   language?: import("@/context/LanguageContext").Language;
 }
 
@@ -629,6 +664,114 @@ export interface AgencyApplication {
   rejection_reason?: string | null;
   submitted_at: string;
   reviewed_at?: string | null;
+}
+
+export type TripDestinationType = "any" | "country" | "city";
+export type TripBudgetFlexibility = "fixed" | "flexible_10" | "flexible_20" | "no_budget_limit";
+export type TripRequestStatus =
+  | "draft"
+  | "submitted"
+  | "searching_agencies"
+  | "receiving_offers"
+  | "comparing_offers"
+  | "accepted"
+  | "expired"
+  | "cancelled";
+
+export interface TripRequest {
+  id: number;
+  request_code: string;
+  user_id: number;
+  destination: string;
+  destination_type: TripDestinationType;
+  start_date?: string | null;
+  end_date?: string | null;
+  flexible_dates: boolean;
+  adults: number;
+  children: number;
+  ideal_budget: number;
+  max_budget?: number | null;
+  budget_currency: string;
+  budget_flexibility: TripBudgetFlexibility;
+  hotel_stars?: number | null;
+  meal_type?: string | null;
+  flight_included: boolean;
+  transfer_included: boolean;
+  visa_assistance: boolean;
+  travel_insurance: boolean;
+  preferred_airline?: string | null;
+  accommodation_preferences?: string | null;
+  activities_interests?: string | null;
+  special_notes?: string | null;
+  offer_expiration_hours: number;
+  expires_at: string;
+  status: TripRequestStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TripOfferStatus = "submitted" | "accepted" | "declined" | "expired" | "cancelled";
+
+export interface TripOffer {
+  id: number;
+  trip_request_id: number;
+  agency_id: number;
+  created_by_user_id: number;
+  total_price: number;
+  currency: string;
+  hotel?: string | null;
+  room_type?: string | null;
+  meal_plan?: string | null;
+  flight?: string | null;
+  transfer?: string | null;
+  visa?: string | null;
+  insurance?: string | null;
+  activities?: string | null;
+  offer_description?: string | null;
+  additional_benefits?: string | null;
+  price_difference_reason?: string | null;
+  price_difference_notes?: string | null;
+  expires_at: string;
+  status: TripOfferStatus;
+  created_at: string;
+  updated_at: string;
+  accepted_at?: string | null;
+  declined_at?: string | null;
+}
+
+export interface TripBooking {
+  id: number;
+  trip_request_id: number;
+  trip_offer_id: number;
+  user_id: number;
+  agency_id: number;
+  status: string;
+  created_at: string;
+}
+
+export interface TripOfferMessage {
+  id: number;
+  trip_request_id: number;
+  trip_offer_id?: number | null;
+  user_id: number;
+  agency_id: number;
+  sender_role: string;
+  sender_user_id?: number | null;
+  content: string;
+  created_at: string;
+}
+
+export interface TripOfferNotification {
+  id: number;
+  recipient_user_id: number;
+  trip_request_id?: number | null;
+  trip_offer_id?: number | null;
+  type: string;
+  title: string;
+  body?: string | null;
+  link_url?: string | null;
+  is_read: boolean;
+  created_at: string;
 }
 
 export const api = {
@@ -907,6 +1050,25 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    updateProfile: (data: UpdateProfileRequest): Promise<User> =>
+      fetchApi(`/users/me/profile`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    listSessions: (): Promise<UserSession[]> => fetchApi(`/users/me/sessions`),
+    revokeSession: (sessionId: string): Promise<{ message: string; revoked_current: boolean }> =>
+      fetchApi(`/users/me/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }),
+    revokeOtherSessions: (): Promise<{ message: string; revoked: number }> =>
+      fetchApi(`/users/me/sessions/revoke-others`, { method: "POST", body: JSON.stringify({}) }),
+    requestEmailChange: (data: RequestEmailChangeRequest): Promise<{ message: string }> =>
+      fetchApi(`/users/me/request-email-change`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    verifyEmailLink: (token: string): Promise<User> =>
+      fetchApi(`/users/verify-email-link?token=${encodeURIComponent(token)}`),
+    confirmEmailChange: (token: string): Promise<AuthResponse> =>
+      fetchApi(`/users/confirm-email-change?token=${encodeURIComponent(token)}`),
     requestPhoneVerification: (data: RequestPhoneVerificationRequest): Promise<{ message: string }> =>
       fetchApi(`/users/request-phone-verification`, {
         method: "POST",
@@ -1073,6 +1235,70 @@ export const api = {
     markRead: (ids: number[]): Promise<{ updated: number }> =>
       fetchApi(`/notifications/mark-read`, { method: "POST", body: JSON.stringify({ notification_ids: ids }) }),
     markAllRead: (): Promise<{ updated: number }> => fetchApi(`/notifications/mark-all-read`, { method: "POST" }),
+  },
+  tripMarketplace: {
+    createRequest: (data: {
+      destination: string;
+      destination_type: TripDestinationType;
+      start_date?: string | null;
+      end_date?: string | null;
+      flexible_dates: boolean;
+      adults: number;
+      children: number;
+      ideal_budget: number;
+      max_budget?: number | null;
+      budget_currency: string;
+      budget_flexibility: TripBudgetFlexibility;
+      hotel_stars?: number | null;
+      meal_type?: string | null;
+      flight_included: boolean;
+      transfer_included: boolean;
+      visa_assistance: boolean;
+      travel_insurance: boolean;
+      preferred_airline?: string | null;
+      accommodation_preferences?: string | null;
+      activities_interests?: string | null;
+      special_notes?: string | null;
+      offer_expiration_hours: 24 | 48 | 72;
+    }): Promise<TripRequest> =>
+      fetchApi(`/trip-requests`, { method: "POST", body: JSON.stringify(data) }),
+    listMyRequests: (): Promise<TripRequest[]> => fetchApi(`/trip-requests/me`),
+    getRequest: (id: number): Promise<TripRequest> => fetchApi(`/trip-requests/${id}`),
+    cancelRequest: (id: number): Promise<TripRequest> => fetchApi(`/trip-requests/${id}/cancel`, { method: "POST" }),
+    listRequestOffers: (id: number): Promise<TripOffer[]> => fetchApi(`/trip-requests/${id}/offers`),
+    listMyOffers: (): Promise<TripOffer[]> => fetchApi(`/trip-offers/me`),
+    getOffer: (id: number): Promise<TripOffer> => fetchApi(`/trip-offers/${id}`),
+    acceptOffer: (id: number): Promise<TripBooking> => fetchApi(`/trip-offers/${id}/accept`, { method: "POST" }),
+    agencyListIncoming: (): Promise<TripRequest[]> => fetchApi(`/agency/trip-requests`),
+    agencyDeclineRequest: (tripRequestId: number, reason?: string | null): Promise<{ id: number; trip_request_id: number; agency_id: number; status: string; declined_reason?: string | null; created_at: string }> =>
+      fetchApi(`/agency/trip-requests/${tripRequestId}/decline${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`, { method: "POST" }),
+    agencyCreateOffer: (
+      tripRequestId: number,
+      data: {
+        total_price: number;
+        currency: string;
+        hotel?: string | null;
+        room_type?: string | null;
+        meal_plan?: string | null;
+        flight?: string | null;
+        transfer?: string | null;
+        visa?: string | null;
+        insurance?: string | null;
+        activities?: string | null;
+        offer_description?: string | null;
+        additional_benefits?: string | null;
+        offer_expiration_hours?: number | null;
+        price_difference_reason?: string | null;
+        price_difference_notes?: string | null;
+      }
+    ): Promise<TripOffer> => fetchApi(`/agency/trip-requests/${tripRequestId}/offers`, { method: "POST", body: JSON.stringify(data) }),
+    listNotifications: (): Promise<TripOfferNotification[]> => fetchApi(`/trip-notifications`),
+    markNotificationRead: (id: number): Promise<TripOfferNotification> => fetchApi(`/trip-notifications/${id}/read`, { method: "POST" }),
+    listOfferMessages: (offerId: number): Promise<TripOfferMessage[]> => fetchApi(`/trip-offers/${offerId}/messages`),
+    sendOfferMessage: (offerId: number, content: string): Promise<TripOfferMessage> =>
+      fetchApi(`/trip-offers/${offerId}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+    adminListRequests: (): Promise<TripRequest[]> => fetchApi(`/admin/trip-requests`),
+    adminListOffers: (): Promise<TripOffer[]> => fetchApi(`/admin/trip-offers`),
   },
   messages: {
     listConversations: (): Promise<Conversation[]> => fetchApi(`/messages/conversations`),

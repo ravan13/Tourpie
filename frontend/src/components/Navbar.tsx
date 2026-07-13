@@ -148,6 +148,12 @@ export default function Navbar() {
         const nextMe = await api.auth.me();
         if (cancelled) return;
         setMe(nextMe);
+        if (nextMe.preferred_language && nextMe.preferred_language !== language) {
+          setLanguage(nextMe.preferred_language);
+        }
+        if (nextMe.preferred_currency && nextMe.preferred_currency !== currency) {
+          setCurrency(nextMe.preferred_currency);
+        }
 
         if (nextMe.role === "agency" && typeof nextMe.agency_id === "number") {
           try {
@@ -239,6 +245,11 @@ export default function Navbar() {
       : effectiveRole === "agency"
         ? myAgency?.name || me?.full_name || me?.email || roleText
         : me?.full_name || me?.email || roleText;
+  const emailStatusVerified = !!me?.is_email_verified && !me?.pending_email;
+  const emailStatusLabel = emailStatusVerified ? t("account_verified") : t("account_verify_email");
+  const emailStatusClass = emailStatusVerified
+    ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+    : "bg-amber-50 text-amber-700 border-amber-100";
 
   const avatarStorageKey =
     role === "agency" && typeof me?.agency_id === "number"
@@ -248,6 +259,11 @@ export default function Navbar() {
         : null;
 
   useEffect(() => {
+    if (me?.avatar_url) {
+      setAvatarUrl(me.avatar_url);
+      setAvatarBroken(false);
+      return;
+    }
     if (!avatarStorageKey) return;
     const id = window.setTimeout(() => {
       try {
@@ -260,7 +276,7 @@ export default function Navbar() {
       }
     }, 0);
     return () => window.clearTimeout(id);
-  }, [avatarStorageKey]);
+  }, [avatarStorageKey, me?.avatar_url]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -533,7 +549,7 @@ export default function Navbar() {
   };
 
   const uploadAvatar = async (file: File) => {
-    if (!avatarStorageKey) return;
+    if (!avatarStorageKey || !me) return;
     const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"]);
     const maxSize = 2 * 1024 * 1024;
     const ext = file.name.split(".").pop()?.toLowerCase() || "";
@@ -549,8 +565,13 @@ export default function Navbar() {
     });
     if (!dataUrl.startsWith("data:image/")) return;
     try {
-      localStorage.setItem(avatarStorageKey, dataUrl);
-    } catch {}
+      await api.auth.updateProfile({ avatar_url: dataUrl });
+      window.dispatchEvent(new Event("tourpie:user-updated"));
+    } catch {
+      try {
+        localStorage.setItem(avatarStorageKey, dataUrl);
+      } catch {}
+    }
     setAvatarUrl(dataUrl);
     setAvatarBroken(false);
   };
@@ -560,6 +581,10 @@ export default function Navbar() {
     try {
       localStorage.removeItem(avatarStorageKey);
     } catch {}
+    void api.auth
+      .updateProfile({ avatar_url: null })
+      .then(() => window.dispatchEvent(new Event("tourpie:user-updated")))
+      .catch(() => undefined);
     setAvatarUrl(null);
     setAvatarBroken(false);
   };
@@ -769,7 +794,27 @@ export default function Navbar() {
                       </div>
 
                       {profileOpen ? (
-                        <div className="absolute right-0 mt-3 w-56 bg-white rounded-2xl border border-gray-100 shadow-xl p-2">
+                        <div className="absolute right-0 mt-3 w-72 bg-white rounded-[1.7rem] border border-gray-100 shadow-xl p-2">
+                          <div className="rounded-[1.3rem] bg-gray-50 border border-gray-100 px-4 py-4 mb-2">
+                            <div className="flex items-start gap-3">
+                              <div className="relative h-12 w-12 rounded-full overflow-hidden border border-white shadow-sm flex-shrink-0">
+                                {avatarUrl && !avatarBroken ? (
+                                  <NextImage src={avatarUrl} alt={identityName} fill sizes="48px" className="object-cover" onError={() => setAvatarBroken(true)} />
+                                ) : (
+                                  <div className={`h-full w-full bg-gradient-to-br ${gradientClass(avatarStorageKey || identityName)} flex items-center justify-center`}>
+                                    <div className="text-white text-sm font-black">{initials(identityName)}</div>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-black text-gray-900">{identityName}</div>
+                                <div className="mt-1 truncate text-xs font-bold text-gray-500">{me?.pending_email || me?.email}</div>
+                                <div className={`mt-2 inline-flex items-center px-2.5 py-1 rounded-full border text-[10px] font-black uppercase tracking-widest ${emailStatusClass}`}>
+                                  {emailStatusLabel}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                           <Link
                             href={homeHref}
                             prefetch={false}
@@ -786,6 +831,16 @@ export default function Navbar() {
                           >
                             {t("dash_settings")}
                           </Link>
+                          {!emailStatusVerified ? (
+                            <Link
+                              href={settingsHref}
+                              prefetch={false}
+                              onClick={() => setProfileOpen(false)}
+                              className="block px-4 py-3 rounded-xl font-black text-sm text-amber-700 hover:bg-amber-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                            >
+                              {t("account_verify_email")}
+                            </Link>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => {
@@ -1025,7 +1080,27 @@ export default function Navbar() {
                   </div>
 
                   {profileOpen ? (
-                  <div className="absolute right-0 mt-3 w-56 bg-white rounded-2xl border border-gray-100 shadow-xl p-2">
+                  <div className="absolute right-0 mt-3 w-72 bg-white rounded-[1.7rem] border border-gray-100 shadow-xl p-2">
+                      <div className="rounded-[1.3rem] bg-gray-50 border border-gray-100 px-4 py-4 mb-2">
+                        <div className="flex items-start gap-3">
+                          <div className="relative h-12 w-12 rounded-full overflow-hidden border border-white shadow-sm flex-shrink-0">
+                            {avatarUrl && !avatarBroken ? (
+                              <NextImage src={avatarUrl} alt={identityName} fill sizes="48px" className="object-cover" onError={() => setAvatarBroken(true)} />
+                            ) : (
+                              <div className={`h-full w-full bg-gradient-to-br ${gradientClass(avatarStorageKey || identityName)} flex items-center justify-center`}>
+                                <div className="text-white text-sm font-black">{initials(identityName)}</div>
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-black text-gray-900">{identityName}</div>
+                            <div className="mt-1 truncate text-xs font-bold text-gray-500">{me?.pending_email || me?.email}</div>
+                            <div className={`mt-2 inline-flex items-center px-2.5 py-1 rounded-full border text-[10px] font-black uppercase tracking-widest ${emailStatusClass}`}>
+                              {emailStatusLabel}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                       <Link
                         href={homeHref}
                         prefetch={false}
@@ -1048,6 +1123,19 @@ export default function Navbar() {
                       >
                         {t("dash_settings")}
                       </Link>
+                      {!emailStatusVerified ? (
+                        <Link
+                          href={settingsHref}
+                          prefetch={false}
+                          onClick={() => {
+                            setProfileOpen(false);
+                            setIsOpen(false);
+                          }}
+                          className="block px-4 py-3 rounded-xl font-black text-sm text-amber-700 hover:bg-amber-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        >
+                          {t("account_verify_email")}
+                        </Link>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => {

@@ -12,6 +12,10 @@ import { demoMarketplacePackageMap } from "@/lib/demoMarketplaceData";
 import type { MarketplacePackage } from "@/lib/marketplace";
 import { getPackageDisplayDescription, getPackageDisplayDestination, getPackageDisplayTitle } from "@/lib/marketplace";
 
+function sanitizeImageSrc(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 export default function PackageDetailsPage() {
   const { t, language } = useLanguage();
   const params = useParams<{ id: string }>();
@@ -76,6 +80,7 @@ export default function PackageDetailsPage() {
 
   const displayPkg = useMemo(() => {
     if (!pkg) return null;
+    const packageCoverImage = sanitizeImageSrc(pkg.image_url);
     const fallbackHighlights = [
       t("details_highlight_1"),
       t("details_highlight_2"),
@@ -84,8 +89,7 @@ export default function PackageDetailsPage() {
       t("details_highlight_5"),
     ];
     const fallbackImages = [
-      pkg.image_url ||
-        "https://images.unsplash.com/photo-1502791451862-7bd8c1df43a7?q=80&w=2000&auto=format&fit=crop",
+      packageCoverImage || "https://images.unsplash.com/photo-1502791451862-7bd8c1df43a7?q=80&w=2000&auto=format&fit=crop",
       "https://images.unsplash.com/photo-1537996194471-e657df975ab4?q=80&w=2000&auto=format&fit=crop",
       "https://images.unsplash.com/photo-1552733407-5d5c46c3bb3b?q=80&w=2000&auto=format&fit=crop",
     ];
@@ -98,6 +102,15 @@ export default function PackageDetailsPage() {
     const displayTitle = getPackageDisplayTitle(pkg, language);
     const displayDescription = getPackageDisplayDescription(pkg, language);
     const displayDestination = getPackageDisplayDestination(pkg, language);
+    const normalizedImages = (pkg.images || [])
+      .map((image) => sanitizeImageSrc(image))
+      .filter((image): image is string => Boolean(image));
+    const galleryImages = Array.from(
+      { length: 3 },
+      (_, index) => normalizedImages[index] || fallbackImages[index] || fallbackImages[0]
+    );
+    const primaryImage = galleryImages[0] || fallbackImages[0];
+    const secondaryImages = galleryImages.slice(1, 3).filter(Boolean);
 
     return {
       ...pkg,
@@ -107,7 +120,9 @@ export default function PackageDetailsPage() {
       rating: avg ? Number(avg.toFixed(1)) : seededRating || 4.8,
       reviews: reviews.length || seededReviewCount || 124,
       highlights: seededServices ? seededServices : pkg.highlights?.length ? pkg.highlights : fallbackHighlights,
-      images: pkg.images?.length ? pkg.images : fallbackImages,
+      images: galleryImages,
+      primaryImage,
+      secondaryImages,
     };
   }, [language, pkg, reviews, t]);
 
@@ -190,15 +205,20 @@ export default function PackageDetailsPage() {
           {/* Image Gallery */}
           <div className="grid grid-cols-2 gap-4 mb-12 h-[500px]">
             <div className="relative h-full rounded-2xl overflow-hidden shadow-lg col-span-2 md:col-span-1">
-              <Image src={displayPkg.images[0]} alt={displayPkg.title} fill className="object-cover" sizes="(max-width: 768px) 100vw, 50vw" />
+              <Image
+                src={displayPkg.primaryImage}
+                alt={displayPkg.title}
+                fill
+                className="object-cover"
+                sizes="(max-width: 768px) 100vw, 50vw"
+              />
             </div>
             <div className="hidden md:grid grid-rows-2 gap-4 h-full">
-              <div className="relative h-full rounded-2xl overflow-hidden shadow-lg">
-                <Image src={displayPkg.images[1]} alt={displayPkg.title} fill className="object-cover" sizes="25vw" />
-              </div>
-              <div className="relative h-full rounded-2xl overflow-hidden shadow-lg">
-                <Image src={displayPkg.images[2]} alt={displayPkg.title} fill className="object-cover" sizes="25vw" />
-              </div>
+              {displayPkg.secondaryImages.map((imageSrc, index) => (
+                <div key={`${imageSrc}-${index}`} className="relative h-full rounded-2xl overflow-hidden shadow-lg">
+                  <Image src={imageSrc} alt={displayPkg.title} fill className="object-cover" sizes="25vw" />
+                </div>
+              ))}
             </div>
           </div>
 

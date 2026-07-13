@@ -22,6 +22,8 @@ export default function AuthForms() {
   const [phoneVerificationCode, setPhoneVerificationCode] = useState("");
   const [emailVerified, setEmailVerified] = useState(false);
   const [phoneVerified, setPhoneVerified] = useState(false);
+  const [requiresEmailVerification, setRequiresEmailVerification] = useState(true);
+  const [requiresPhoneVerification, setRequiresPhoneVerification] = useState(false);
   const [emailResendSec, setEmailResendSec] = useState(0);
   const [phoneResendSec, setPhoneResendSec] = useState(0);
   const [resetCode, setResetCode] = useState("");
@@ -91,6 +93,8 @@ export default function AuthForms() {
     setPhoneVerificationCode("");
     setEmailVerified(false);
     setPhoneVerified(false);
+    setRequiresEmailVerification(true);
+    setRequiresPhoneVerification(false);
     setEmailResendSec(0);
     setPhoneResendSec(0);
     setResetCode("");
@@ -127,6 +131,15 @@ export default function AuthForms() {
     if (items.includes(value)) return items.filter((x) => x !== value);
     return [...items, value];
   };
+
+  const showEmailVerificationCard = requiresEmailVerification || emailVerified;
+  const showPhoneVerificationCard = requiresPhoneVerification || phoneVerified;
+  const verificationSubtitle =
+    showEmailVerificationCard && showPhoneVerificationCard
+      ? t("otp_verify_subtitle", { email })
+      : showPhoneVerificationCard
+        ? t("auth_phone_verify_needed")
+        : t("auth_verify_subtitle", { email });
 
   const handleSocial = async (provider: "google" | "apple") => {
     const providerLabel = provider === "google" ? t("auth_google") : t("auth_apple");
@@ -198,12 +211,20 @@ export default function AuthForms() {
         role: "user",
         language,
       });
+      setEmailVerified(false);
+      setPhoneVerified(false);
+      setRequiresEmailVerification(true);
+      setRequiresPhoneVerification(false);
       setStep("verify");
       setMessage({ type: "success", text: t("auth_register_success") });
     } catch (error) {
       const mapped = normalizeAuthError(error);
       if (mapped.kind === "email_not_verified") {
         await api.auth.requestVerification({ email, language }).catch(() => undefined);
+        setEmailVerified(false);
+        setPhoneVerified(false);
+        setRequiresEmailVerification(true);
+        setRequiresPhoneVerification(false);
         setEmailResendSec(60);
         setStep("verify");
         setMessage({ type: "error", text: mapped.text });
@@ -211,6 +232,10 @@ export default function AuthForms() {
       }
       if (mapped.kind === "phone_not_verified") {
         await api.auth.requestPhoneVerification({ email, language }).catch(() => undefined);
+        setEmailVerified(true);
+        setPhoneVerified(false);
+        setRequiresEmailVerification(false);
+        setRequiresPhoneVerification(true);
         setPhoneResendSec(60);
         setStep("verify");
         setMessage({ type: "error", text: mapped.text });
@@ -249,14 +274,34 @@ export default function AuthForms() {
     setMessage(null);
     try {
       const u = await api.auth.verifyEmail({ email, code: verificationCode });
-      setEmailVerified(!!u.is_email_verified || !!u.is_verified);
-      if (u.is_phone_verified || u.is_verified) {
-        await finalizeLogin();
-      } else {
-        setMessage({ type: "success", text: t("otp_email_verified") });
+      const role = typeof u.role === "string" ? u.role.toLowerCase() : "";
+      const nextEmailVerified = !!u.is_email_verified || !!u.is_verified;
+      const nextPhoneVerified = !!u.is_phone_verified || !!u.is_verified;
+
+      setEmailVerified(nextEmailVerified);
+      setRequiresEmailVerification(false);
+
+      if (role === "agency" && !nextPhoneVerified) {
+        setPhoneVerified(false);
+        setRequiresPhoneVerification(true);
+        await api.auth.requestPhoneVerification({ email, language }).catch(() => undefined);
+        setPhoneResendSec(60);
+        setMessage({ type: "success", text: t("auth_phone_verify_needed") });
+        return;
       }
+
+      setPhoneVerified(nextPhoneVerified);
+      setRequiresPhoneVerification(false);
+      await finalizeLogin();
     } catch (error) {
       const mapped = normalizeAuthError(error);
+      if (mapped.kind === "phone_not_verified") {
+        await api.auth.requestPhoneVerification({ email, language }).catch(() => undefined);
+        setEmailVerified(true);
+        setRequiresEmailVerification(false);
+        setRequiresPhoneVerification(true);
+        setPhoneResendSec(60);
+      }
       setMessage({ type: "error", text: mapped.text });
     } finally {
       setLoading(false);
@@ -269,14 +314,28 @@ export default function AuthForms() {
     setMessage(null);
     try {
       const u = await api.auth.verifyPhone({ email, code: phoneVerificationCode });
-      setPhoneVerified(!!u.is_phone_verified || !!u.is_verified);
-      if (u.is_email_verified || u.is_verified) {
+      const nextPhoneVerified = !!u.is_phone_verified || !!u.is_verified;
+      const nextEmailVerified = !!u.is_email_verified || !!u.is_verified;
+
+      setPhoneVerified(nextPhoneVerified);
+      setRequiresPhoneVerification(false);
+
+      if (nextEmailVerified) {
+        setEmailVerified(true);
+        setRequiresEmailVerification(false);
         await finalizeLogin();
-      } else {
-        setMessage({ type: "success", text: t("otp_phone_verified") });
+        return;
       }
+
+      setRequiresEmailVerification(true);
+      setMessage({ type: "success", text: t("otp_phone_verified") });
     } catch (error) {
       const mapped = normalizeAuthError(error);
+      if (mapped.kind === "email_not_verified") {
+        await api.auth.requestVerification({ email, language }).catch(() => undefined);
+        setRequiresEmailVerification(true);
+        setEmailResendSec(60);
+      }
       setMessage({ type: "error", text: mapped.text });
     } finally {
       setLoading(false);
@@ -492,12 +551,12 @@ export default function AuthForms() {
                 <div>
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">
                     {t("auth_phone")}
+                    <span className="ml-1 normal-case tracking-normal text-gray-400">({t("custom_trip_optional")})</span>
                   </label>
                   <input
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
                     type="tel"
-                    required
                     className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 font-medium text-gray-900 placeholder-gray-400"
                     placeholder={t("auth_phone_placeholder")}
                   />
@@ -506,12 +565,12 @@ export default function AuthForms() {
                 <div>
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">
                     {t("auth_country")}
+                    <span className="ml-1 normal-case tracking-normal text-gray-400">({t("custom_trip_optional")})</span>
                   </label>
                   <input
                     value={country}
                     onChange={(e) => setCountry(e.target.value)}
                     type="text"
-                    required
                     className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 font-medium text-gray-900 placeholder-gray-400"
                     placeholder={t("auth_country_placeholder")}
                   />
@@ -596,9 +655,10 @@ export default function AuthForms() {
       {step === "verify" && (
         <>
           <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">{t("otp_verify_title")}</h2>
-          <p className="text-sm text-gray-500 font-medium text-center mb-6">{t("otp_verify_subtitle", { email })}</p>
+          <p className="text-sm text-gray-500 font-medium text-center mb-6">{verificationSubtitle}</p>
 
           <div className="space-y-4">
+            {showEmailVerificationCard ? (
             <div className="rounded-2xl border border-gray-200 bg-white p-5">
               <div className="flex items-center justify-between gap-4">
                 <div className="font-black text-gray-900">{t("otp_verify_email_title")}</div>
@@ -641,7 +701,9 @@ export default function AuthForms() {
                 </form>
               ) : null}
             </div>
+            ) : null}
 
+            {showPhoneVerificationCard ? (
             <div className="rounded-2xl border border-gray-200 bg-white p-5">
               <div className="flex items-center justify-between gap-4">
                 <div className="font-black text-gray-900">{t("otp_verify_phone_title")}</div>
@@ -684,6 +746,7 @@ export default function AuthForms() {
                 </form>
               ) : null}
             </div>
+            ) : null}
 
             {message && (
               <div

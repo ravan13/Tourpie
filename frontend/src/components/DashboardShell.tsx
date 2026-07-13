@@ -93,8 +93,8 @@ export default function DashboardShell({
   }, [activeHref, nav]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="lg:hidden sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-gray-100">
+    <div className="tp-page-shell min-h-screen">
+      <div className="lg:hidden sticky top-0 z-40 border-b border-white/70 bg-white/80 backdrop-blur-xl">
         <div className="px-4 h-16 flex items-center justify-between">
           <Logo className="gap-3" />
           <button
@@ -144,10 +144,10 @@ export default function DashboardShell({
         ) : null}
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 lg:px-6 py-8 lg:py-10 flex gap-8">
+      <div className="relative z-[1] max-w-7xl mx-auto px-4 lg:px-6 py-8 lg:py-10 flex gap-8">
         <aside className="hidden lg:block w-72 shrink-0">
           <div className="sticky top-10">
-            <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-6">
+            <div className="rounded-[2rem] border border-white/70 bg-white/82 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl">
               <Logo className="gap-3" />
               <div className="mt-6 space-y-1">
                 {nav.map((item) => (
@@ -188,7 +188,7 @@ export default function DashboardShell({
         </aside>
 
         <main className="flex-1">
-          <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm p-8">
+          <div className="rounded-[2.5rem] border border-white/70 bg-white/82 p-8 shadow-[0_28px_70px_rgba(15,23,42,0.08)] backdrop-blur-xl">
             <div className="flex items-start justify-between gap-6">
               <div>
                 <div className="flex items-center gap-3">

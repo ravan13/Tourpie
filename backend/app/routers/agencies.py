@@ -370,10 +370,12 @@ def update_agency(
     user: models.User = Depends(get_current_user),
 ):
     require_agency_or_admin(user, agency_id)
+    data = body.model_dump(exclude_unset=True)
+    if user.role != models.UserRole.ADMIN and "subscription_status" in data:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed")
     agency = db.query(models.Agency).filter(models.Agency.id == agency_id).first()
     if not agency:
         raise HTTPException(status_code=404, detail="Agency not found")
-    data = body.model_dump(exclude_unset=True)
     for k, v in data.items():
         setattr(agency, k, v)
     db.commit()

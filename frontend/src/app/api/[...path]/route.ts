@@ -85,6 +85,10 @@ export function PUT(request: NextRequest, context: { params: Promise<{ path: str
   return handle(request, context);
 }
 
+export function PATCH(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+  return handle(request, context);
+}
+
 export function DELETE(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return handle(request, context);
 }

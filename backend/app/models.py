@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date, DateTime, Text, Enum, Boolean
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date, DateTime, Text, Enum, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from .database import Base
 import datetime
@@ -32,6 +32,12 @@ class MessageSenderRole(str, enum.Enum):
     AGENCY = "agency"
     ADMIN = "admin"
 
+class AgencySubscriptionStatus(str, enum.Enum):
+    TRIAL = "trial"
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    SUSPENDED = "suspended"
+
 class NotificationType(str, enum.Enum):
     BOOKING = "booking"
     MESSAGE = "message"
@@ -53,6 +59,11 @@ class User(Base):
     admin_2fa_rate_count = Column(Integer, default=0)
     phone_number = Column(String, nullable=True, index=True)
     country = Column(String, nullable=True)
+    preferred_language = Column(String, nullable=True)
+    preferred_currency = Column(String, nullable=True)
+    time_zone = Column(String, nullable=True)
+    avatar_url = Column(Text, nullable=True)
+    auth_provider = Column(String, default="email")
     is_verified = Column(Boolean, default=False)
     is_email_verified = Column(Boolean, default=False)
     is_phone_verified = Column(Boolean, default=False)
@@ -67,11 +78,19 @@ class User(Base):
     verification_sent_at = Column(DateTime, nullable=True)
     verification_rate_window_start = Column(DateTime, nullable=True)
     verification_rate_count = Column(Integer, default=0)
+    email_verification_token_hash = Column(String, nullable=True)
+    email_verification_token_expires_at = Column(DateTime, nullable=True)
     phone_verification_code_hash = Column(String, nullable=True)
     phone_verification_expires_at = Column(DateTime, nullable=True)
     phone_verification_sent_at = Column(DateTime, nullable=True)
     phone_verification_rate_window_start = Column(DateTime, nullable=True)
     phone_verification_rate_count = Column(Integer, default=0)
+    pending_email = Column(String, nullable=True, index=True)
+    email_change_token_hash = Column(String, nullable=True)
+    email_change_token_expires_at = Column(DateTime, nullable=True)
+    email_change_sent_at = Column(DateTime, nullable=True)
+    email_change_rate_window_start = Column(DateTime, nullable=True)
+    email_change_rate_count = Column(Integer, default=0)
     password_reset_token_hash = Column(String, nullable=True)
     password_reset_expires_at = Column(DateTime, nullable=True)
     password_reset_sent_at = Column(DateTime, nullable=True)
@@ -80,6 +99,7 @@ class User(Base):
     is_banned = Column(Boolean, default=False)
     banned_until = Column(DateTime, nullable=True)
     banned_reason = Column(Text, nullable=True)
+    last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     bookings = relationship("Booking", back_populates="user")
@@ -89,6 +109,24 @@ class User(Base):
     favorites = relationship("Favorite", back_populates="user", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
+    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    auth_provider = Column(String, nullable=True)
+    device_label = Column(String, nullable=True)
+    user_agent = Column(Text, nullable=True)
+    ip_address = Column(String, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
+    last_seen_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    revoked_at = Column(DateTime, nullable=True, index=True)
+
+    user = relationship("User", back_populates="sessions")
 
 class Agency(Base):
     __tablename__ = "agencies"
@@ -103,6 +141,10 @@ class Agency(Base):
     office_address = Column(String, nullable=True)
     tax_vat_info = Column(String, nullable=True)
     status = Column(String, default="inactive")
+    subscription_status = Column(Enum(AgencySubscriptionStatus, native_enum=False), default=AgencySubscriptionStatus.TRIAL)
+    custom_trip_requests_enabled = Column(Boolean, default=False)
+    countries_served = Column(Text, nullable=True)
+    cities_served = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
     
     packages = relationship("Package", back_populates="agency")
@@ -433,3 +475,211 @@ class AuthDeliveryLog(Base):
     created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
 
     user = relationship("User", foreign_keys=[user_id])
+
+class TripRequestStatus(str, enum.Enum):
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    SEARCHING_AGENCIES = "searching_agencies"
+    RECEIVING_OFFERS = "receiving_offers"
+    COMPARING_OFFERS = "comparing_offers"
+    ACCEPTED = "accepted"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+class TripDestinationType(str, enum.Enum):
+    ANY = "any"
+    COUNTRY = "country"
+    CITY = "city"
+
+class TripBudgetFlexibility(str, enum.Enum):
+    FIXED = "fixed"
+    FLEX_10 = "flexible_10"
+    FLEX_20 = "flexible_20"
+    NO_LIMIT = "no_budget_limit"
+
+class TripOfferStatus(str, enum.Enum):
+    SUBMITTED = "submitted"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+class TripPriceDifferenceReason(str, enum.Enum):
+    BETTER_HOTEL = "better_hotel"
+    DIRECT_FLIGHT = "direct_flight"
+    PRIVATE_TRANSFER = "private_transfer"
+    TRAVEL_INSURANCE_INCLUDED = "travel_insurance_included"
+    VISA_INCLUDED = "visa_included"
+    LUXURY_ROOM = "luxury_room"
+    PREMIUM_RESORT = "premium_resort"
+    EXTRA_ACTIVITIES = "extra_activities"
+    PEAK_SEASON_PRICING = "peak_season_pricing"
+    OTHER = "other"
+
+class TripRequest(Base):
+    __tablename__ = "trip_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    request_code = Column(String, unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    destination = Column(String, nullable=False, index=True)
+    destination_type = Column(Enum(TripDestinationType, native_enum=False), default=TripDestinationType.ANY, index=True)
+
+    start_date = Column(Date, nullable=True, index=True)
+    end_date = Column(Date, nullable=True, index=True)
+    flexible_dates = Column(Boolean, default=False)
+
+    adults = Column(Integer, default=1)
+    children = Column(Integer, default=0)
+
+    ideal_budget = Column(Float, nullable=False)
+    max_budget = Column(Float, nullable=True)
+    budget_currency = Column(String, nullable=False, default="USD")
+    budget_flexibility = Column(Enum(TripBudgetFlexibility, native_enum=False), default=TripBudgetFlexibility.FIXED)
+
+    hotel_stars = Column(Integer, nullable=True)
+    meal_type = Column(String, nullable=True)
+    flight_included = Column(Boolean, default=False)
+    transfer_included = Column(Boolean, default=False)
+    visa_assistance = Column(Boolean, default=False)
+    travel_insurance = Column(Boolean, default=False)
+    preferred_airline = Column(String, nullable=True)
+    accommodation_preferences = Column(Text, nullable=True)
+    activities_interests = Column(Text, nullable=True)
+    special_notes = Column(Text, nullable=True)
+
+    offer_expiration_hours = Column(Integer, default=48)
+    expires_at = Column(DateTime, nullable=False, index=True)
+
+    status = Column(Enum(TripRequestStatus, native_enum=False), default=TripRequestStatus.SUBMITTED, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    user = relationship("User")
+    matches = relationship("TripRequestAgencyMatch", back_populates="trip_request", cascade="all, delete-orphan")
+    offers = relationship("TripOffer", back_populates="trip_request", cascade="all, delete-orphan")
+
+class TripRequestAgencyMatch(Base):
+    __tablename__ = "trip_request_agency_matches"
+    __table_args__ = (UniqueConstraint("trip_request_id", "agency_id", name="uq_trip_request_agency_match"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_request_id = Column(Integer, ForeignKey("trip_requests.id"), nullable=False, index=True)
+    agency_id = Column(Integer, ForeignKey("agencies.id"), nullable=False, index=True)
+    status = Column(String, default="sent", index=True)
+    declined_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
+
+    trip_request = relationship("TripRequest", back_populates="matches")
+    agency = relationship("Agency")
+
+class TripOffer(Base):
+    __tablename__ = "trip_offers"
+    __table_args__ = (UniqueConstraint("trip_request_id", "agency_id", name="uq_trip_offer_request_agency"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_request_id = Column(Integer, ForeignKey("trip_requests.id"), nullable=False, index=True)
+    agency_id = Column(Integer, ForeignKey("agencies.id"), nullable=False, index=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    total_price = Column(Float, nullable=False)
+    currency = Column(String, nullable=False, default="USD")
+
+    hotel = Column(String, nullable=True)
+    room_type = Column(String, nullable=True)
+    meal_plan = Column(String, nullable=True)
+    flight = Column(Text, nullable=True)
+    transfer = Column(Text, nullable=True)
+    visa = Column(Text, nullable=True)
+    insurance = Column(Text, nullable=True)
+    activities = Column(Text, nullable=True)
+    offer_description = Column(Text, nullable=True)
+    additional_benefits = Column(Text, nullable=True)
+
+    price_difference_reason = Column(Enum(TripPriceDifferenceReason, native_enum=False), nullable=True)
+    price_difference_notes = Column(Text, nullable=True)
+
+    expires_at = Column(DateTime, nullable=False, index=True)
+    status = Column(Enum(TripOfferStatus, native_enum=False), default=TripOfferStatus.SUBMITTED, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    accepted_at = Column(DateTime, nullable=True)
+    declined_at = Column(DateTime, nullable=True)
+
+    trip_request = relationship("TripRequest", back_populates="offers")
+    agency = relationship("Agency")
+    created_by_user = relationship("User")
+    messages = relationship("TripOfferMessage", back_populates="trip_offer", cascade="all, delete-orphan")
+    booking = relationship("TripBooking", back_populates="trip_offer", uselist=False, cascade="all, delete-orphan")
+
+class TripBooking(Base):
+    __tablename__ = "trip_bookings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_request_id = Column(Integer, ForeignKey("trip_requests.id"), nullable=False, index=True)
+    trip_offer_id = Column(Integer, ForeignKey("trip_offers.id"), nullable=False, unique=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    agency_id = Column(Integer, ForeignKey("agencies.id"), nullable=False, index=True)
+
+    status = Column(String, default="booking_confirmed", index=True)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
+
+    trip_offer = relationship("TripOffer", back_populates="booking")
+    trip_request = relationship("TripRequest")
+    user = relationship("User")
+    agency = relationship("Agency")
+
+class TripOfferMessage(Base):
+    __tablename__ = "trip_offer_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_request_id = Column(Integer, ForeignKey("trip_requests.id"), nullable=False, index=True)
+    trip_offer_id = Column(Integer, ForeignKey("trip_offers.id"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    agency_id = Column(Integer, ForeignKey("agencies.id"), nullable=False, index=True)
+    sender_role = Column(Enum(MessageSenderRole), nullable=False)
+    sender_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
+
+    trip_offer = relationship("TripOffer", back_populates="messages")
+    user = relationship("User", foreign_keys=[user_id])
+    agency = relationship("Agency")
+    sender_user = relationship("User", foreign_keys=[sender_user_id])
+
+class TripOfferNotification(Base):
+    __tablename__ = "trip_offer_notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipient_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    trip_request_id = Column(Integer, ForeignKey("trip_requests.id"), nullable=True, index=True)
+    trip_offer_id = Column(Integer, ForeignKey("trip_offers.id"), nullable=True, index=True)
+    type = Column(String, default="system", index=True)
+    title = Column(String, nullable=False)
+    body = Column(Text, nullable=True)
+    link_url = Column(String, nullable=True)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
+
+    recipient_user = relationship("User", foreign_keys=[recipient_user_id])
+    trip_request = relationship("TripRequest")
+    trip_offer = relationship("TripOffer")
+
+class OfferComparison(Base):
+    __tablename__ = "offer_comparisons"
+    __table_args__ = (UniqueConstraint("trip_offer_id", name="uq_offer_comparison_offer"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_request_id = Column(Integer, ForeignKey("trip_requests.id"), nullable=False, index=True)
+    trip_offer_id = Column(Integer, ForeignKey("trip_offers.id"), nullable=False, unique=True, index=True)
+    ideal_budget = Column(Float, nullable=False)
+    max_budget = Column(Float, nullable=True)
+    offer_price = Column(Float, nullable=False)
+    budget_status = Column(String, nullable=False, index=True)
+    delta_from_ideal = Column(Float, nullable=True)
+    delta_from_max = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
+
+    trip_request = relationship("TripRequest")
+    trip_offer = relationship("TripOffer")

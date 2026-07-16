@@ -77,6 +77,9 @@ export const metadata: Metadata = {
     shortcut: ["/favicon.ico"],
   },
   manifest: "/site.webmanifest",
+};
+
+export const viewport = {
   themeColor: "#022A6B",
 };
 

@@ -24,7 +24,14 @@ _base_dir = Path(__file__).resolve().parent.parent
 load_dotenv(_base_dir / ".env", override=False)
 load_dotenv(_base_dir.parent / ".env", override=False)
 
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-for-development")
+_env_name = (os.getenv("TOURPIE_ENV") or os.getenv("ENVIRONMENT") or os.getenv("ENV") or "development").strip().lower()
+_is_prod = _env_name in ("prod", "production")
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY or SECRET_KEY.strip() in ("", "your-secret-key-for-development"):
+    if _is_prod:
+        raise RuntimeError("SECRET_KEY must be set in production.")
+    SECRET_KEY = "your-secret-key-for-development"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 ACCESS_TOKEN_EXPIRE_ADMIN_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_ADMIN_MINUTES", "15"))
@@ -47,6 +54,8 @@ EMAIL_DEBUG_TO_CONSOLE = os.getenv("EMAIL_DEBUG_TO_CONSOLE", "0").strip() == "1"
 SMS_DEBUG_TO_CONSOLE = os.getenv("SMS_DEBUG_TO_CONSOLE", "0").strip() == "1"
 AUTH_DEBUG_DELIVERY = os.getenv("AUTH_DEBUG_DELIVERY", "0").strip() == "1"
 AUTH_DEBUG_OTP = os.getenv("AUTH_DEBUG_OTP", "0").strip() == "1"
+if _is_prod and (EMAIL_DEBUG_TO_CONSOLE or SMS_DEBUG_TO_CONSOLE or AUTH_DEBUG_DELIVERY or AUTH_DEBUG_OTP):
+    raise RuntimeError("Auth debug delivery flags must be disabled in production.")
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_FROM = os.getenv("TWILIO_FROM")

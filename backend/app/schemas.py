@@ -132,6 +132,12 @@ class User(UserBase):
     class Config:
         from_attributes = True
 
+class AdminUserOverview(BaseModel):
+    total_users: int
+    verified_users: int
+    new_registrations_7d: int
+    recent_users: List[User]
+
 class UserSession(BaseModel):
     session_id: str
     auth_provider: Optional[str] = None

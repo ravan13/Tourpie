@@ -55,6 +55,14 @@ def get_bookings(
         _format_package(booking.package)
     return bookings
 
+@router.get("/count", response_model=dict)
+def count_bookings(user: models.User = Depends(get_current_user), db: Session = Depends(database.get_db)):
+    role_value = user.role.value if hasattr(user.role, "value") else user.role
+    if role_value != "admin":
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    total = db.query(models.Booking).count()
+    return {"total": total}
+
 @router.get("/me", response_model=List[schemas.Booking])
 def get_my_bookings(
     skip: int = 0,

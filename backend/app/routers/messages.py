@@ -144,7 +144,7 @@ def send_message(
                 agency_user.id,
                 title="New message",
                 body=body.content.strip()[:240],
-                link_url=f"/admin?tab=messages&conversation={conv.id}",
+                link_url=f"/agency/messages?conversation={conv.id}",
             )
     else:
         _notify_user(
@@ -158,4 +158,3 @@ def send_message(
     db.commit()
     db.refresh(msg)
     return msg
-

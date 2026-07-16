@@ -3,9 +3,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .routers import users, packages, bookings, agencies, recommendations, favorites, messages, notifications, community, blog, moderation, trip_marketplace
 from sqlalchemy import text
+import os
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+_env_name = (os.getenv("TOURPIE_ENV") or os.getenv("ENVIRONMENT") or os.getenv("ENV") or "development").strip().lower()
+_is_prod = _env_name in ("prod", "production")
+
+_auto_schema_raw = os.getenv("TOURPIE_AUTO_SCHEMA")
+if _auto_schema_raw is None:
+    _auto_schema = not _is_prod
+else:
+    _auto_schema = _auto_schema_raw.strip() == "1"
+
+if _auto_schema:
+    Base.metadata.create_all(bind=engine)
 
 def _ensure_columns():
     ddl = [
@@ -39,15 +49,27 @@ def _ensure_columns():
     except Exception:
         return
 
-_ensure_columns()
+if _auto_schema:
+    _ensure_columns()
 
 app = FastAPI(title="TourPie - Travel Marketplace API")
 
+def _parse_cors_origins() -> list[str]:
+    raw = (os.getenv("CORS_ORIGINS") or os.getenv("TOURPIE_CORS_ORIGINS") or "").strip()
+    if not raw:
+        return ["http://127.0.0.1:3000"]
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
 # Configure CORS
+cors_origins = _parse_cors_origins()
+cors_allow_credentials = (os.getenv("CORS_ALLOW_CREDENTIALS") or "1").strip() == "1"
+if "*" in cors_origins:
+    cors_allow_credentials = False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

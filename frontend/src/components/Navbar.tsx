@@ -51,7 +51,7 @@ export default function Navbar() {
   const appReadyEmittedRef = useRef(false);
   const [me, setMe] = useState<User | null>(null);
   const [myAgency, setMyAgency] = useState<Agency | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [storedAvatarUrl, setStoredAvatarUrl] = useState<string | null>(null);
   const [avatarBroken, setAvatarBroken] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
@@ -128,7 +128,7 @@ export default function Navbar() {
       if (!token) {
         setMe(null);
         setMyAgency(null);
-        setAvatarUrl(null);
+        setStoredAvatarUrl(null);
         setAvatarBroken(false);
         setProfileOpen(false);
       }
@@ -169,8 +169,8 @@ export default function Navbar() {
         }
       } catch (error) {
         if (cancelled) return;
-      const message = error instanceof Error ? error.message : "";
-      if (isAuthErrorMessage(message)) {
+        const message = error instanceof Error ? error.message : "";
+        if (isAuthErrorMessage(message)) {
           clearSessionToken();
           syncFromToken(null);
         }
@@ -186,7 +186,7 @@ export default function Navbar() {
       window.removeEventListener("storage", onAuthChange);
       window.removeEventListener("tourpie:auth", onAuthChange as EventListener);
     };
-  }, []);
+  }, [currency, language, setCurrency, setLanguage]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -257,21 +257,21 @@ export default function Navbar() {
       : typeof me?.id === "number"
         ? `tourpie:avatar:user:${me.id}`
         : null;
+  const avatarUrl = me?.avatar_url ? me.avatar_url : storedAvatarUrl;
 
   useEffect(() => {
     if (me?.avatar_url) {
-      setAvatarUrl(me.avatar_url);
-      setAvatarBroken(false);
+      window.setTimeout(() => setAvatarBroken(false), 0);
       return;
     }
     if (!avatarStorageKey) return;
     const id = window.setTimeout(() => {
       try {
         const stored = localStorage.getItem(avatarStorageKey);
-        setAvatarUrl(stored ? stored : null);
+        setStoredAvatarUrl(stored ? stored : null);
         setAvatarBroken(false);
       } catch {
-        setAvatarUrl(null);
+        setStoredAvatarUrl(null);
         setAvatarBroken(false);
       }
     }, 0);
@@ -572,7 +572,7 @@ export default function Navbar() {
         localStorage.setItem(avatarStorageKey, dataUrl);
       } catch {}
     }
-    setAvatarUrl(dataUrl);
+    setStoredAvatarUrl(dataUrl);
     setAvatarBroken(false);
   };
 
@@ -585,7 +585,7 @@ export default function Navbar() {
       .updateProfile({ avatar_url: null })
       .then(() => window.dispatchEvent(new Event("tourpie:user-updated")))
       .catch(() => undefined);
-    setAvatarUrl(null);
+    setStoredAvatarUrl(null);
     setAvatarBroken(false);
   };
 

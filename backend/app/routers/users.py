@@ -177,7 +177,14 @@ def _find_user_by_hashed_token(
     token: str,
 ) -> models.User | None:
     now = datetime.now(timezone.utc)
-    rows = db.query(models.User).all()
+    hash_col = getattr(models.User, hash_attr, None)
+    exp_col = getattr(models.User, expires_attr, None)
+    query = db.query(models.User)
+    if hash_col is not None:
+        query = query.filter(hash_col.isnot(None))
+    if exp_col is not None:
+        query = query.filter(exp_col.isnot(None), exp_col >= now)
+    rows = query.all()
     for row in rows:
         token_hash = getattr(row, hash_attr, None)
         if not token_hash:
@@ -494,6 +501,33 @@ def list_users(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     users = db.query(models.User).order_by(models.User.created_at.desc()).offset(skip).limit(limit).all()
     return users
+
+@router.get("/count", response_model=dict)
+def count_users(current_user: models.User = Depends(get_current_user), db: Session = Depends(database.get_db)):
+    role_value = current_user.role.value if hasattr(current_user.role, "value") else current_user.role
+    if role_value != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    total = db.query(models.User).count()
+    return {"total": total}
+
+@router.get("/admin/overview", response_model=schemas.AdminUserOverview)
+def admin_user_overview(current_user: models.User = Depends(get_current_user), db: Session = Depends(database.get_db)):
+    role_value = current_user.role.value if hasattr(current_user.role, "value") else current_user.role
+    if role_value != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+    now = datetime.now(timezone.utc)
+    week_ago = now - td(days=7)
+    total_users = db.query(models.User).count()
+    verified_users = db.query(models.User).filter(models.User.is_verified.is_(True)).count()
+    new_registrations_7d = db.query(models.User).filter(models.User.created_at >= week_ago).count()
+    recent_users = db.query(models.User).order_by(models.User.created_at.desc()).limit(6).all()
+    return {
+        "total_users": int(total_users),
+        "verified_users": int(verified_users),
+        "new_registrations_7d": int(new_registrations_7d),
+        "recent_users": recent_users,
+    }
 
 @router.patch("/{user_id}", response_model=schemas.User)
 def admin_update_user(

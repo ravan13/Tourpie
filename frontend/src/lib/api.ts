@@ -48,26 +48,24 @@ export function clearCookieValue(name: string) {
 export function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
   const fromStorage = localStorage.getItem("token");
-  if (fromStorage) {
-    if (!getCookieValue(SESSION_COOKIE_NAME)) {
-      setCookieValue(SESSION_COOKIE_NAME, fromStorage, 60 * 60 * 24 * 30);
-    }
-    return fromStorage;
-  }
-  return getCookieValue(SESSION_COOKIE_NAME);
+  return fromStorage || null;
 }
 
 export function setSessionToken(token: string) {
   if (typeof window === "undefined") return;
   localStorage.setItem("token", token);
-  setCookieValue(SESSION_COOKIE_NAME, token, 60 * 60 * 24 * 30);
+  void fetch("/api/auth/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, maxAgeSeconds: 60 * 60 * 24 * 30 }),
+  }).catch(() => undefined);
   window.dispatchEvent(new Event("tourpie:auth"));
 }
 
 export function clearSessionToken() {
   if (typeof window === "undefined") return;
   localStorage.removeItem("token");
-  clearCookieValue(SESSION_COOKIE_NAME);
+  void fetch("/api/auth/session", { method: "DELETE" }).catch(() => undefined);
   window.dispatchEvent(new Event("tourpie:auth"));
 }
 
@@ -776,6 +774,7 @@ export interface TripOfferNotification {
 
 export const api = {
   packages: {
+    count: (): Promise<{ total: number }> => fetchApi(`/packages/count`),
     getAll: (skip = 0, limit = 100): Promise<Package[]> => 
       fetchApi(`/packages?skip=${skip}&limit=${limit}`),
     listMyAgency: (params: {
@@ -910,6 +909,7 @@ export const api = {
       fetchApi(`/recommendations/personalized?user_id=${userId}&limit=${limit}`),
   },
   bookings: {
+    count: (): Promise<{ total: number }> => fetchApi(`/bookings/count`),
     create: (data: {
       package_id: number;
       number_of_people: number;
@@ -964,6 +964,7 @@ export const api = {
     delete: (id: number): Promise<{ message: string }> => fetchApi(`/bookings/${id}`, { method: "DELETE" }),
   },
   agencies: {
+    count: (): Promise<{ total: number }> => fetchApi(`/agencies/count`),
     getAll: (skip = 0, limit = 100): Promise<Agency[]> => fetchApi(`/agencies?skip=${skip}&limit=${limit}`),
     getOne: (id: number): Promise<Agency> => fetchApi(`/agencies/${id}`),
     update: (id: number, data: Partial<Agency>): Promise<Agency> =>
@@ -1215,6 +1216,9 @@ export const api = {
   },
   users: {
     list: (skip = 0, limit = 200): Promise<User[]> => fetchApi(`/users?skip=${skip}&limit=${limit}`),
+    count: (): Promise<{ total: number }> => fetchApi(`/users/count`),
+    adminOverview: (): Promise<{ total_users: number; verified_users: number; new_registrations_7d: number; recent_users: User[] }> =>
+      fetchApi(`/users/admin/overview`),
     update: (
       id: number,
       data: Partial<Pick<User, "full_name" | "role" | "is_verified" | "onboarding_completed" | "agency_id">>

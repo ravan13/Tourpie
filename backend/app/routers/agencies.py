@@ -95,6 +95,12 @@ def require_agency_or_admin(user: models.User, agency_id: int) -> None:
 def get_agencies(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db)):
     return db.query(models.Agency).offset(skip).limit(limit).all()
 
+@router.get("/count", response_model=dict)
+def count_agencies(user: models.User = Depends(get_current_user), db: Session = Depends(database.get_db)):
+    require_admin(user)
+    total = db.query(models.Agency).count()
+    return {"total": total}
+
 @router.post("/", response_model=schemas.Agency)
 def create_agency(agency: schemas.AgencyCreate, db: Session = Depends(database.get_db)):
     db_agency = models.Agency(**agency.model_dump())

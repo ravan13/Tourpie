@@ -19,7 +19,7 @@ import {
   Package as PackageType,
 } from "@/lib/api";
 import { useLanguage } from "@/context/LanguageContext";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -777,6 +777,7 @@ function AgencyPackages({ agencyId }: { agencyId: number }) {
 function AgencyMessages() {
   const { t } = useLanguage();
   const nav = useMemo(() => agencyNav(t), [t]);
+  const searchParams = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -799,7 +800,9 @@ function AgencyMessages() {
         setLoading(true);
         const convs = await api.messages.listConversations();
         setConversations(convs);
-        const initial = convs[0]?.id;
+        const q = searchParams.get("conversation");
+        const qId = q ? Number(q) : NaN;
+        const initial = Number.isFinite(qId) ? qId : convs[0]?.id;
         if (initial) {
           setMessages([]);
           setActiveId(initial);
@@ -810,7 +813,7 @@ function AgencyMessages() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!activeId) return;

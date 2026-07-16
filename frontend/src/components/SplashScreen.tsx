@@ -221,13 +221,17 @@ export default function SplashGate({ children }: { children: React.ReactNode }) 
   const [hidden, setHidden] = useState(false);
   const [entered, setEntered] = useState(false);
   const readyRef = useRef(false);
-  const startRef = useRef<number>(typeof window === "undefined" ? 0 : Date.now());
+  const startRef = useRef<number>(0);
   const [messageIndex, setMessageIndex] = useState(0);
 
   const readyNow = useMemo(() => {
     if (hidden) return true;
     return false;
   }, [hidden]);
+
+  useEffect(() => {
+    if (!startRef.current) startRef.current = Date.now();
+  }, []);
 
   useEffect(() => {
     if (hidden) return;

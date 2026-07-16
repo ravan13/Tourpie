@@ -4,7 +4,7 @@ import CustomTripRequestForm from "@/components/customTrip/CustomTripRequestForm
 import { useLanguage } from "@/context/LanguageContext";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const PROMO_STORAGE_KEY = "tp_customTripPromo";
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -78,7 +78,7 @@ export default function CustomTripEntryPoint() {
     if (typeof window === "undefined") return;
 
     const eligible = pathname === "/" && shouldShowPromo(Date.now());
-    setWidgetReady(!eligible);
+    window.setTimeout(() => setWidgetReady(!eligible), 0);
 
     if (!eligible) return;
 
@@ -162,16 +162,16 @@ export default function CustomTripEntryPoint() {
     return () => window.removeEventListener("keydown", onKey);
   }, [sheetOpen, assistantDrawerOpen, requestFlowOpen]);
 
-  const markPromoSeen = () => {
+  function markPromoSeen() {
     writePromoState({ lastShownAt: Date.now() });
-  };
+  }
 
-  const dismissSheet = () => {
+  function dismissSheet() {
     markPromoSeen();
     setWidgetReady(true);
     setSheetEntered(false);
     window.setTimeout(() => setSheetOpen(false), reducedMotion ? 0 : 320);
-  };
+  }
 
   const openAssistantDrawer = () => {
     setAssistantHintActive(false);
@@ -181,10 +181,10 @@ export default function CustomTripEntryPoint() {
     window.setTimeout(() => assistantDrawerRef.current?.focus(), 120);
   };
 
-  const closeAssistantDrawer = () => {
+  function closeAssistantDrawer() {
     setAssistantDrawerEntered(false);
     window.setTimeout(() => setAssistantDrawerOpen(false), reducedMotion ? 0 : 340);
-  };
+  }
 
   const openRequestFlow = () => {
     setAssistantHintActive(false);
@@ -194,10 +194,10 @@ export default function CustomTripEntryPoint() {
     window.setTimeout(() => requestFlowRef.current?.focus(), 140);
   };
 
-  const closeRequestFlow = () => {
+  function closeRequestFlow() {
     setRequestFlowEntered(false);
     window.setTimeout(() => setRequestFlowOpen(false), reducedMotion ? 0 : 360);
-  };
+  }
 
   const startTripFromSheet = () => {
     dismissSheet();
@@ -209,44 +209,41 @@ export default function CustomTripEntryPoint() {
     window.setTimeout(() => router.push(href), reducedMotion ? 0 : 220);
   };
 
-  const assistantActions = useMemo(
-    () => [
-      {
-        key: "create",
-        icon: "✈️",
-        title: t("custom_trip_assistant_card_create_title"),
-        description: t("custom_trip_assistant_card_create_desc"),
-        badge: t("custom_trip_assistant_card_recommended"),
-        highlighted: true,
-        onClick: openRequestFlow,
-      },
-      {
-        key: "browse",
-        icon: "🌍",
-        title: t("custom_trip_assistant_card_browse_title"),
-        description: t("custom_trip_assistant_card_browse_desc"),
-        highlighted: false,
-        onClick: () => navigateFromDrawer("/marketplace"),
-      },
-      {
-        key: "requests",
-        icon: "📩",
-        title: t("custom_trip_assistant_card_requests_title"),
-        description: t("custom_trip_assistant_card_requests_desc"),
-        highlighted: false,
-        onClick: () => navigateFromDrawer("/dashboard/requests"),
-      },
-      {
-        key: "offers",
-        icon: "💬",
-        title: t("custom_trip_assistant_card_offers_title"),
-        description: t("custom_trip_assistant_card_offers_desc"),
-        highlighted: false,
-        onClick: () => navigateFromDrawer("/dashboard/offers"),
-      },
-    ],
-    [t]
-  );
+  const assistantActions = [
+    {
+      key: "create",
+      icon: "✈️",
+      title: t("custom_trip_assistant_card_create_title"),
+      description: t("custom_trip_assistant_card_create_desc"),
+      badge: t("custom_trip_assistant_card_recommended"),
+      highlighted: true,
+      onClick: openRequestFlow,
+    },
+    {
+      key: "browse",
+      icon: "🌍",
+      title: t("custom_trip_assistant_card_browse_title"),
+      description: t("custom_trip_assistant_card_browse_desc"),
+      highlighted: false,
+      onClick: () => navigateFromDrawer("/marketplace"),
+    },
+    {
+      key: "requests",
+      icon: "📩",
+      title: t("custom_trip_assistant_card_requests_title"),
+      description: t("custom_trip_assistant_card_requests_desc"),
+      highlighted: false,
+      onClick: () => navigateFromDrawer("/dashboard/requests"),
+    },
+    {
+      key: "offers",
+      icon: "💬",
+      title: t("custom_trip_assistant_card_offers_title"),
+      description: t("custom_trip_assistant_card_offers_desc"),
+      highlighted: false,
+      onClick: () => navigateFromDrawer("/dashboard/offers"),
+    },
+  ];
 
   const assistantIsExpanded = assistantExpanded || assistantHintActive;
   const assistantTitle = assistantHintActive ? t("custom_trip_assistant_hint_title") : t("custom_trip_assistant_label");

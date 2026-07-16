@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
 import json
 from .. import models, schemas, database
+from ..deps import get_current_user
 from .packages import _apply_lifecycle_updates, _today_utc
 from sqlalchemy import or_
 
@@ -100,17 +101,25 @@ def get_top_rated_packages(limit: int = 5, db: Session = Depends(database.get_db
     return [format_package(p) for p in top_rated]
 
 @router.get("/personalized", response_model=List[schemas.Package])
-def get_personalized_recommendations(user_id: int, limit: int = 5, db: Session = Depends(database.get_db)):
+def get_personalized_recommendations(
+    user_id: int | None = None,
+    limit: int = 5,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db),
+):
     """
     Personalized recommendations based on user's past bookings and reviews.
     """
     # Logic: Find destinations the user has booked before and suggest similar ones
     _apply_lifecycle_updates(db)
     today = _today_utc()
+    if user_id is not None and user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    resolved_user_id = user.id
     user_bookings = (
         db.query(models.Booking)
         .options()
-        .filter(models.Booking.user_id == user_id)
+        .filter(models.Booking.user_id == resolved_user_id)
         .all()
     )
     if not user_bookings:

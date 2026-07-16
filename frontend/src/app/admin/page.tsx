@@ -32,77 +32,43 @@ export default function AdminDashboard() {
       try {
         setLoading(true);
         setError(null);
-        const fetchUsers = async () => {
-          const all: import("@/lib/api").User[] = [];
-          for (let skip = 0; skip < 2000; skip += 200) {
-            const batch = await api.users.list(skip, 200).catch(() => []);
-            all.push(...batch);
-            if (batch.length < 200) break;
-          }
-          return all;
-        };
-        const fetchPackages = async () => {
-          const all: import("@/lib/api").Package[] = [];
-          for (let skip = 0; skip < 2000; skip += 100) {
-            const batch = await api.packages.getAll(skip, 100).catch(() => []);
-            all.push(...batch);
-            if (batch.length < 100) break;
-          }
-          return all;
-        };
-
-        const [usersRes, pkgsRes, agsRes, bookingsRes, appsRes, pendingPostsRes, logsRes] = await Promise.allSettled([
-          fetchUsers(),
-          fetchPackages(),
-          api.agencies.getAll(0, 2000),
-          api.bookings.getAll(),
+        const [userStatsRes, pkgsCountRes, agsCountRes, bookingsCountRes, appsRes, pendingPostsRes, logsRes] = await Promise.allSettled([
+          api.users.adminOverview(),
+          api.packages.count(),
+          api.agencies.count(),
+          api.bookings.count(),
           api.agencies.listApplications("pending_verification"),
           api.moderation.listCommunityPosts({ skip: 0, limit: 200, status: "pending_review" }),
           api.moderation.listLogs(0, 20),
         ]);
 
-        const users = usersRes.status === "fulfilled" ? usersRes.value : [];
-        const pkgs = pkgsRes.status === "fulfilled" ? pkgsRes.value : [];
-        const ags = agsRes.status === "fulfilled" ? agsRes.value : [];
-        const bookings = bookingsRes.status === "fulfilled" ? bookingsRes.value : [];
+        const userStats = userStatsRes.status === "fulfilled" ? userStatsRes.value : null;
+        const pkgsTotal = pkgsCountRes.status === "fulfilled" ? pkgsCountRes.value.total : 0;
+        const agsTotal = agsCountRes.status === "fulfilled" ? agsCountRes.value.total : 0;
+        const bookingsTotal = bookingsCountRes.status === "fulfilled" ? bookingsCountRes.value.total : 0;
         const apps = appsRes.status === "fulfilled" ? appsRes.value : [];
         const pendingPosts = pendingPostsRes.status === "fulfilled" ? pendingPostsRes.value : [];
         const logs = logsRes.status === "fulfilled" ? logsRes.value : [];
 
-        const rejected = [usersRes, pkgsRes, agsRes, bookingsRes, appsRes, pendingPostsRes, logsRes].filter((r) => r.status === "rejected");
+        const rejected = [userStatsRes, pkgsCountRes, agsCountRes, bookingsCountRes, appsRes, pendingPostsRes, logsRes].filter((r) => r.status === "rejected");
         if (rejected.length > 0) {
           const firstError = rejected[0].status === "rejected" ? rejected[0].reason : null;
           const text = firstError instanceof Error ? firstError.message : "";
           setError(text || "Some dashboard data could not be loaded.");
         }
 
-        const now = Date.now();
-        const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-        const verifiedUsers = users.filter((u) => Boolean(u.is_verified));
-        const newRegistrations = users.filter((u) => {
-          const raw = (u as unknown as { created_at?: string }).created_at;
-          if (!raw) return false;
-          const t = new Date(raw).getTime();
-          return Number.isFinite(t) && t >= weekAgo;
-        });
-
         setCounts({
-          users: users.length,
-          verified_users: verifiedUsers.length,
-          new_registrations: newRegistrations.length,
-          packages: pkgs.length,
-          agencies: ags.length,
-          bookings: bookings.length,
+          users: userStats?.total_users ?? 0,
+          verified_users: userStats?.verified_users ?? 0,
+          new_registrations: userStats?.new_registrations_7d ?? 0,
+          packages: pkgsTotal,
+          agencies: agsTotal,
+          bookings: bookingsTotal,
           pending_apps: apps.length,
           pending_moderation: pendingPosts.length,
         });
 
-        users.sort((a, b) => {
-          const at = new Date((a as unknown as { created_at?: string }).created_at || 0).getTime() || 0;
-          const bt = new Date((b as unknown as { created_at?: string }).created_at || 0).getTime() || 0;
-          return bt - at;
-        });
-        setActivity({ recentUsers: users.slice(0, 6), recentLogs: logs.slice(0, 8) });
+        setActivity({ recentUsers: userStats?.recent_users ?? [], recentLogs: logs.slice(0, 8) });
       } finally {
         setLoading(false);
       }

@@ -6,10 +6,12 @@ import { userNav } from "@/lib/dashboardNav";
 import { Currency, Language, useLanguage } from "@/context/LanguageContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useRouter } from "next/navigation";
 
 export default function SettingsPage() {
   const { t, language, setLanguage, currency, setCurrency } = useLanguage();
   const nav = useMemo(() => userNav(t), [t]);
+  const router = useRouter();
   const { authReady, user: me, isLoggedIn } = useCurrentUser();
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMessage, setProfileMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -36,14 +38,24 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!me) return;
-    setDisplayName(me.full_name || "");
-    setPhoneNumber(me.phone_number || "");
-    setCountry(me.country || "");
-    setTimeZone(me.time_zone || Intl.DateTimeFormat().resolvedOptions().timeZone || "");
-    setPreferredLanguage((me.preferred_language as Language) || language);
-    setPreferredCurrency((me.preferred_currency as Currency) || currency);
-    setAvatarUrl(me.avatar_url || null);
-    setEmailChange(me.pending_email || "");
+    const nextDisplayName = me.full_name || "";
+    const nextPhoneNumber = me.phone_number || "";
+    const nextCountry = me.country || "";
+    const nextTimeZone = me.time_zone || Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    const nextLanguage = (me.preferred_language as Language) || language;
+    const nextCurrency = (me.preferred_currency as Currency) || currency;
+    const nextAvatarUrl = me.avatar_url || null;
+    const nextEmailChange = me.pending_email || "";
+    window.setTimeout(() => {
+      setDisplayName(nextDisplayName);
+      setPhoneNumber(nextPhoneNumber);
+      setCountry(nextCountry);
+      setTimeZone(nextTimeZone);
+      setPreferredLanguage(nextLanguage);
+      setPreferredCurrency(nextCurrency);
+      setAvatarUrl(nextAvatarUrl);
+      setEmailChange(nextEmailChange);
+    }, 0);
   }, [currency, language, me]);
 
   const accountVerified = !!me?.is_email_verified && !me?.pending_email;
@@ -56,22 +68,27 @@ export default function SettingsPage() {
   useEffect(() => {
     let cancelled = false;
     if (!isLoggedIn || !me) {
-      setSessions([]);
+      window.setTimeout(() => {
+        if (!cancelled) setSessions([]);
+      }, 0);
       return;
     }
 
-    setSessionsLoading(true);
-    api.auth
-      .listSessions()
-      .then((items) => {
-        if (!cancelled) setSessions(items);
-      })
-      .catch(() => {
-        if (!cancelled) setSessions([]);
-      })
-      .finally(() => {
-        if (!cancelled) setSessionsLoading(false);
-      });
+    window.setTimeout(() => {
+      if (cancelled) return;
+      setSessionsLoading(true);
+      api.auth
+        .listSessions()
+        .then((items) => {
+          if (!cancelled) setSessions(items);
+        })
+        .catch(() => {
+          if (!cancelled) setSessions([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSessionsLoading(false);
+        });
+    }, 0);
 
     return () => {
       cancelled = true;
@@ -160,7 +177,7 @@ export default function SettingsPage() {
       const result = await api.auth.revokeSession(sessionId);
       if (result.revoked_current) {
         clearSessionToken();
-        window.location.href = "/login";
+        router.replace("/login");
         return;
       }
       setSessions((current) => current.filter((session) => session.session_id !== sessionId));

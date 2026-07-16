@@ -17,8 +17,10 @@ export default function EmailActionPage() {
     const mode = searchParams.get("mode");
     const token = searchParams.get("token");
     if (!mode || !token) {
-      setState("error");
-      setMessage(t("account_email_action_invalid"));
+      window.setTimeout(() => {
+        setState("error");
+        setMessage(t("account_email_action_invalid"));
+      }, 0);
       return;
     }
 

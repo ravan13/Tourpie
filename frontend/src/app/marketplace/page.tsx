@@ -122,15 +122,16 @@ export default function MarketplacePage() {
     const urlMaxDuration = safeGet("maxDuration");
     const urlCollection = safeGet("collection");
 
-    if (urlDestination) setDestination(urlDestination);
-    if (urlCategory) setCategory(urlCategory);
-    if (urlMinPrice) setMinPrice(urlMinPrice);
-    if (urlMaxPrice) setMaxPrice(urlMaxPrice);
-    if (urlMinDuration) setMinDuration(urlMinDuration);
-    if (urlMaxDuration) setMaxDuration(urlMaxDuration);
-    if (urlCollection) setCollection(urlCollection);
-
     appliedUrlFiltersRef.current = true;
+    window.setTimeout(() => {
+      if (urlDestination) setDestination(urlDestination);
+      if (urlCategory) setCategory(urlCategory);
+      if (urlMinPrice) setMinPrice(urlMinPrice);
+      if (urlMaxPrice) setMaxPrice(urlMaxPrice);
+      if (urlMinDuration) setMinDuration(urlMinDuration);
+      if (urlMaxDuration) setMaxDuration(urlMaxDuration);
+      if (urlCollection) setCollection(urlCollection);
+    }, 0);
   }, [searchParams]);
 
   useEffect(() => {

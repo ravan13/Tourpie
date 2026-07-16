@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useLanguage } from "@/context/LanguageContext";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui";
 
 export default function AdminDashboard() {
   const { t } = useLanguage();
@@ -78,81 +79,93 @@ export default function AdminDashboard() {
   return (
     <DashboardShell title={t("admin_nav_overview")} subtitle={t("admin_subtitle")} nav={nav}>
       {error ? (
-        <div className="mb-6 bg-amber-50 border border-amber-100 text-amber-800 rounded-2xl px-5 py-4 font-bold text-sm">
+        <div className="mb-6 rounded-[1.5rem] border border-amber-200 bg-amber-50/95 px-5 py-4 text-sm font-bold text-amber-800 shadow-[0_16px_36px_rgba(245,158,11,0.10)]">
           {error}
         </div>
       ) : null}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
-          <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_nav_users")}</div>
-          <div className="mt-3 text-4xl font-black text-gray-900">{loading ? "…" : counts.users}</div>
-          <div className="mt-2 text-xs font-bold text-gray-500">{loading ? "…" : `${counts.verified_users} verified`}</div>
-        </div>
-        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
-          <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_total_packages")}</div>
-          <div className="mt-3 text-4xl font-black text-gray-900">{loading ? "…" : counts.packages}</div>
-        </div>
-        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
-          <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_nav_agencies")}</div>
-          <div className="mt-3 text-4xl font-black text-gray-900">{loading ? "…" : counts.agencies}</div>
-          <div className="mt-2 text-xs font-bold text-gray-500">{loading ? "…" : `${counts.pending_apps} pending`}</div>
-        </div>
-        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
-          <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_nav_bookings")}</div>
-          <div className="mt-3 text-4xl font-black text-gray-900">{loading ? "…" : counts.bookings}</div>
-          <div className="mt-2 text-xs font-bold text-gray-500">{loading ? "…" : `${counts.new_registrations} new (7d)`}</div>
-        </div>
+        <Card>
+          <CardHeader>
+            <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_nav_users")}</div>
+            <CardTitle className="mt-1 text-4xl">{loading ? "…" : counts.users}</CardTitle>
+            <CardDescription className="text-xs">{loading ? "…" : `${counts.verified_users} verified`}</CardDescription>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_total_packages")}</div>
+            <CardTitle className="mt-1 text-4xl">{loading ? "…" : counts.packages}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_nav_agencies")}</div>
+            <CardTitle className="mt-1 text-4xl">{loading ? "…" : counts.agencies}</CardTitle>
+            <CardDescription className="text-xs">{loading ? "…" : `${counts.pending_apps} pending`}</CardDescription>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_nav_bookings")}</div>
+            <CardTitle className="mt-1 text-4xl">{loading ? "…" : counts.bookings}</CardTitle>
+            <CardDescription className="text-xs">{loading ? "…" : `${counts.new_registrations} new (7d)`}</CardDescription>
+          </CardHeader>
+        </Card>
       </div>
 
       <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
         <Link
           href="/admin/agencies"
           prefetch={false}
-          className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7 hover:shadow-md transition-shadow"
+          className="block"
         >
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-lg font-black text-gray-900">{t("admin_nav_agencies")}</div>
-              <div className="mt-2 text-gray-500 font-medium">{counts.pending_apps} pending applications</div>
-            </div>
-            <div className="text-3xl">✅</div>
-          </div>
+          <Card className="h-full hover:-translate-y-1 hover:shadow-[0_30px_72px_rgba(15,23,42,0.14)]">
+            <CardHeader className="flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="text-lg">{t("admin_nav_agencies")}</CardTitle>
+                <CardDescription className="mt-2">{counts.pending_apps} pending applications</CardDescription>
+              </div>
+              <div className="text-3xl">✅</div>
+            </CardHeader>
+          </Card>
         </Link>
 
         <Link
           href="/admin/bookings"
           prefetch={false}
-          className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7 hover:shadow-md transition-shadow"
+          className="block"
         >
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-lg font-black text-gray-900">{t("admin_nav_bookings")}</div>
-              <div className="mt-2 text-gray-500 font-medium">{t("admin_booking_requests")}</div>
-            </div>
-            <div className="text-3xl">🧾</div>
-          </div>
+          <Card className="h-full hover:-translate-y-1 hover:shadow-[0_30px_72px_rgba(15,23,42,0.14)]">
+            <CardHeader className="flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="text-lg">{t("admin_nav_bookings")}</CardTitle>
+                <CardDescription className="mt-2">{t("admin_booking_requests")}</CardDescription>
+              </div>
+              <div className="text-3xl">🧾</div>
+            </CardHeader>
+          </Card>
         </Link>
 
         <Link
           href="/admin/moderation"
           prefetch={false}
-          className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7 hover:shadow-md transition-shadow"
+          className="block"
         >
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-lg font-black text-gray-900">{t("admin_nav_moderation_queue")}</div>
-              <div className="mt-2 text-gray-500 font-medium">
-                {t("admin_overview_pending_review", { count: counts.pending_moderation })}
+          <Card className="h-full hover:-translate-y-1 hover:shadow-[0_30px_72px_rgba(15,23,42,0.14)]">
+            <CardHeader className="flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="text-lg">{t("admin_nav_moderation_queue")}</CardTitle>
+                <CardDescription className="mt-2">{t("admin_overview_pending_review", { count: counts.pending_moderation })}</CardDescription>
               </div>
-            </div>
-            <div className="text-3xl">🛡️</div>
-          </div>
+              <div className="text-3xl">🛡️</div>
+            </CardHeader>
+          </Card>
         </Link>
       </div>
 
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-10 py-8 border-b border-gray-50 bg-gray-50/30">
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-gray-100 bg-gray-50/55 px-10 py-8">
             <div className="text-lg font-black text-gray-900">{t("admin_overview_recent_registrations")}</div>
           </div>
           {loading ? (
@@ -175,10 +188,10 @@ export default function AdminDashboard() {
               ))}
             </div>
           )}
-        </div>
+        </Card>
 
-        <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-10 py-8 border-b border-gray-50 bg-gray-50/30">
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-gray-100 bg-gray-50/55 px-10 py-8">
             <div className="text-lg font-black text-gray-900">{t("admin_overview_moderation_activity")}</div>
           </div>
           {loading ? (
@@ -203,7 +216,7 @@ export default function AdminDashboard() {
               ))}
             </div>
           )}
-        </div>
+        </Card>
       </div>
     </DashboardShell>
   );

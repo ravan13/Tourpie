@@ -5,6 +5,7 @@ import { api, Booking as BookingType, getStoredToken } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
+import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 
 export default function Booking() {
   const { t, formatMoney } = useLanguage();
@@ -79,20 +80,30 @@ export default function Booking() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-20 text-center">
-        <p className="text-gray-500 font-medium">{t("bookings_loading")}</p>
+      <div className="tp-page-shell">
+        <div className="relative z-[1] mx-auto max-w-5xl px-4 py-20 text-center">
+          <p className="text-gray-500 font-medium">{t("bookings_loading")}</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12">
-      <h1 className="text-3xl font-bold mb-8 text-gray-900">{t("bookings_title")}</h1>
+    <div className="tp-page-shell">
+      <div className="relative z-[1] mx-auto max-w-5xl px-4 py-10">
+      <div className="rounded-[2.5rem] border border-white/70 bg-white/82 p-8 shadow-[0_28px_74px_rgba(15,23,42,0.10)] backdrop-blur-xl">
+        <div className="text-xs font-black uppercase tracking-[0.24em] text-slate-400">{t("bookings_title")}</div>
+        <h1 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-950">{t("bookings_title")}</h1>
+      </div>
       
       {bookings.length > 0 ? (
-        <div className="space-y-6">
+        <div className="mt-8 space-y-6">
           {bookings.map((booking) => (
-            <div key={booking.id} className="bg-white rounded-3xl border border-gray-100 overflow-hidden flex flex-col md:flex-row shadow-sm hover:shadow-md transition-shadow">
+            <Card
+              key={booking.id}
+              className="overflow-hidden p-0 hover:-translate-y-1 hover:shadow-[0_30px_72px_rgba(15,23,42,0.14)]"
+            >
+              <div className="flex flex-col md:flex-row">
               <div className="relative w-full md:w-48 h-48 flex-shrink-0">
                 <Image
                   src={booking.package?.image_url || "https://images.unsplash.com/photo-1502791451862-7bd8c1df43a7?q=80&w=2000&auto=format&fit=crop"}
@@ -102,16 +113,16 @@ export default function Booking() {
                   sizes="200px"
                 />
               </div>
-              <div className="p-6 flex-1 flex flex-col justify-between">
+              <div className="flex flex-1 flex-col justify-between p-6">
                 <div>
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      <span className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-1 block">
+                      <span className="mb-1 block text-xs font-black uppercase tracking-widest text-blue-600">
                         {t("bookings_order", { id: booking.id })}
                       </span>
-                      <h3 className="text-xl font-bold text-gray-900">{booking.package?.title}</h3>
+                      <h3 className="text-xl font-black text-gray-900">{booking.package?.title}</h3>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusClass(booking.status)}`}>
+                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${getStatusClass(booking.status)}`}>
                       {getStatusLabel(booking.status)}
                     </span>
                   </div>
@@ -125,7 +136,7 @@ export default function Booking() {
                   </div>
                 </div>
                 <div className="flex justify-between items-center pt-6 border-t border-gray-50 mt-4">
-                  <div className="text-lg font-bold text-gray-900">
+                  <div className="text-lg font-black text-gray-900">
                     {t("bookings_total")}{" "}
                     <span className="text-blue-600">
                       {formatMoney(
@@ -137,30 +148,29 @@ export default function Booking() {
                       )}
                     </span>
                   </div>
-                  <button 
-                    onClick={() => handleCancel(booking.id)}
-                    className="text-sm font-bold text-gray-400 hover:text-red-500 transition duration-200 py-2 px-4 rounded-lg hover:bg-red-50"
-                  >
+                  <Button variant="ghost" size="sm" onClick={() => handleCancel(booking.id)} className="text-gray-500 hover:text-red-600 hover:bg-red-50/80">
                     {t("bookings_cancel")}
-                  </button>
+                  </Button>
                 </div>
               </div>
-            </div>
+              </div>
+            </Card>
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-3xl border border-dashed border-gray-200 py-20 text-center">
+        <Card className="mt-8 border-dashed py-20 text-center">
           <div className="text-5xl mb-6">✈️</div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">{t("bookings_none_title")}</h2>
+          <h2 className="mb-2 text-2xl font-black text-gray-900">{t("bookings_none_title")}</h2>
           <p className="text-gray-500 mb-8 max-w-sm mx-auto">{t("bookings_none_subtitle")}</p>
           <Link
             href="/results"
-            className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold px-10 py-4 rounded-2xl transition duration-200 shadow-lg shadow-blue-100"
+            className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-transparent bg-[linear-gradient(135deg,_rgba(2,42,107,0.98),_rgba(12,60,125,0.94)_55%,_rgba(255,106,26,0.94))] px-10 text-sm font-black tracking-[-0.01em] text-white shadow-[0_20px_48px_rgba(2,42,107,0.22)] transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_26px_60px_rgba(2,42,107,0.28)]"
           >
             {t("bookings_browse")}
           </Link>
-        </div>
+        </Card>
       )}
+      </div>
     </div>
   );
 }

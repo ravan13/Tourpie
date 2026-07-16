@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import { api, BlogArticle, BlogArticleSummary } from "@/lib/api";
+import { Button, Card, CardHeader, CardTitle } from "@/components/ui";
 
 export default function BlogArticlePage() {
   const { t, language } = useLanguage();
@@ -60,13 +61,16 @@ export default function BlogArticlePage() {
   const shareUrl = typeof window !== "undefined" ? window.location.href : "";
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-10">
+    <div className="tp-page-shell">
+      <div className="relative z-[1] mx-auto max-w-5xl px-4 py-10">
       <div className="flex items-center justify-between gap-3">
         <Link href="/blog" className="text-sm font-black text-gray-700 hover:text-blue-600 transition-colors">
           ← {t("blog_back")}
         </Link>
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           onClick={async () => {
             try {
               if (typeof navigator !== "undefined" && "share" in navigator && typeof navigator.share === "function") {
@@ -76,24 +80,23 @@ export default function BlogArticlePage() {
               }
             } catch {}
           }}
-          className="px-4 py-2 rounded-2xl bg-white border border-gray-200 hover:bg-gray-50 text-sm font-black text-gray-800 transition-all"
         >
           {t("common_copy_link")}
-        </button>
+        </Button>
       </div>
 
       {loading ? (
-        <div className="mt-8 bg-white rounded-[2.5rem] border border-gray-100 py-20 text-center font-bold text-gray-500">
+        <Card className="mt-8 py-20 text-center">
           {t("common_loading")}
-        </div>
+        </Card>
       ) : !article ? (
-        <div className="mt-8 bg-white rounded-[2.5rem] border border-dashed border-gray-200 py-20 text-center">
+        <Card className="mt-8 border-dashed py-20 text-center">
           <div className="text-2xl font-black text-gray-900">{t("blog_article_not_found")}</div>
           <div className="mt-2 text-gray-500 font-medium">{t("blog_article_not_found_subtitle")}</div>
-        </div>
+        </Card>
       ) : (
         <>
-          <div className="mt-8 bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden shadow-sm">
+          <Card className="mt-8 overflow-hidden p-0">
             <div className="relative h-80">
               <Image
                 src={article.cover_image_url || placeholderCover}
@@ -122,7 +125,7 @@ export default function BlogArticlePage() {
                 <div className="text-gray-700 font-medium leading-relaxed whitespace-pre-wrap">{article.content}</div>
               </div>
             </div>
-          </div>
+          </Card>
 
           {related.length ? (
             <div className="mt-10">
@@ -132,23 +135,23 @@ export default function BlogArticlePage() {
                   <Link
                     key={p.slug}
                     href={`/blog/${p.slug}`}
-                    className="bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden shadow-sm hover:shadow-[0_30px_60px_-20px_rgba(0,0,0,0.15)] transition-all duration-500 group"
+                    className="group block"
                   >
-                    <div className="relative h-44">
-                      <Image
-                        src={p.cover_image_url || placeholderCover}
-                        alt={p.title}
-                        fill
-                        className="object-cover group-hover:scale-105 transition-transform duration-700"
-                        sizes="(max-width: 768px) 100vw, 320px"
-                      />
-                    </div>
-                    <div className="p-6">
-                      <div className="text-lg font-black text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2">
-                        {p.title}
+                    <Card className="overflow-hidden p-0 hover:-translate-y-1 hover:shadow-[0_30px_72px_rgba(15,23,42,0.14)]">
+                      <div className="relative h-44">
+                        <Image
+                          src={p.cover_image_url || placeholderCover}
+                          alt={p.title}
+                          fill
+                          className="object-cover group-hover:scale-105 transition-transform duration-700"
+                          sizes="(max-width: 768px) 100vw, 320px"
+                        />
                       </div>
-                      <div className="mt-2 text-gray-600 font-medium leading-relaxed line-clamp-2">{p.excerpt}</div>
-                    </div>
+                      <CardHeader className="p-6">
+                        <CardTitle className="line-clamp-2 text-lg group-hover:text-blue-600 transition-colors">{p.title}</CardTitle>
+                        <p className="mt-2 line-clamp-2 text-sm font-medium leading-relaxed text-gray-600">{p.excerpt}</p>
+                      </CardHeader>
+                    </Card>
                   </Link>
                 ))}
               </div>
@@ -156,6 +159,7 @@ export default function BlogArticlePage() {
           ) : null}
         </>
       )}
+      </div>
     </div>
   );
 }

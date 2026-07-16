@@ -15,6 +15,7 @@ import { Currency, Language, useLanguage } from "@/context/LanguageContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { Button, Card, CardDescription, CardHeader, CardTitle, Input } from "@/components/ui";
 
 const AVATAR_ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"]);
 const AVATAR_ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "svg"]);
@@ -57,7 +58,7 @@ function InfoTile({
   tone?: Tone;
 }) {
   return (
-    <div className="rounded-[1.75rem] border border-gray-100 bg-white p-4 shadow-sm">
+    <Card variant="solid" padding="sm" className="rounded-[1.75rem]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] font-black uppercase tracking-widest text-gray-400">{label}</div>
@@ -66,7 +67,7 @@ function InfoTile({
         </div>
         <div className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border text-lg ${toneClasses(tone)}`}>{icon}</div>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -86,11 +87,11 @@ function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="rounded-[2rem] border border-gray-100 bg-gray-50 p-6 shadow-sm">
+    <Card id={id} variant="muted" className="rounded-[2rem]">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
-            <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-xl shadow-sm">{icon}</div>
+            <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-xl shadow-[0_16px_34px_rgba(15,23,42,0.08)]">{icon}</div>
             <div>
               <div className="text-xs font-black uppercase tracking-widest text-gray-400">{title}</div>
               {description ? <div className="mt-1 text-sm font-medium text-gray-500">{description}</div> : null}
@@ -100,7 +101,7 @@ function SectionCard({
         {actions ? <div className="flex flex-wrap gap-3">{actions}</div> : null}
       </div>
       <div className="mt-5">{children}</div>
-    </section>
+    </Card>
   );
 }
 
@@ -453,16 +454,16 @@ export default function SettingsPage() {
     <DashboardShell title={t("dash_settings_title")} subtitle={t("dash_settings_subtitle")} nav={nav}>
       <div className="space-y-6">
         {loading ? (
-          <div className="rounded-[2.5rem] border border-gray-100 bg-white p-12 text-center font-bold text-gray-500 shadow-sm">{t("common_loading")}</div>
+          <Card className="rounded-[2.5rem] p-12 text-center font-bold text-gray-500">{t("common_loading")}</Card>
         ) : !isLoggedIn || !me ? (
-          <div className="rounded-[2.5rem] border border-gray-100 bg-white p-12 text-center shadow-sm">
+          <Card className="rounded-[2.5rem] p-12 text-center">
             <div className="text-6xl">⚙️</div>
             <div className="mt-4 text-xl font-black text-gray-900">{t("dash_settings_login_title")}</div>
             <div className="mt-2 text-gray-500 font-medium">{t("dash_settings_login_subtitle")}</div>
-          </div>
+          </Card>
         ) : (
           <>
-            <section className="overflow-hidden rounded-[2.5rem] border border-blue-100 bg-gradient-to-br from-white via-blue-50 to-indigo-50 shadow-sm">
+            <section className="overflow-hidden rounded-[2.5rem] border border-white/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.95),rgba(239,246,255,0.92),rgba(238,242,255,0.92))] shadow-[0_30px_80px_rgba(15,23,42,0.10)] backdrop-blur-xl">
               <div className="grid gap-6 p-6 lg:grid-cols-[1.45fr,0.95fr] lg:p-8">
                 <div className="flex flex-col gap-6">
                   <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
@@ -505,7 +506,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="rounded-[2rem] border border-white/70 bg-white/80 p-5 shadow-sm backdrop-blur">
+                <div className="rounded-[2rem] border border-white/70 bg-white/84 p-5 shadow-[0_20px_52px_rgba(15,23,42,0.08)] backdrop-blur">
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <div className="text-xs font-black uppercase tracking-widest text-gray-400">{t("account_profile_completion")}</div>
@@ -537,7 +538,7 @@ export default function SettingsPage() {
             </section>
 
             {!accountVerified ? (
-              <div className="rounded-[2rem] border border-amber-200 bg-amber-50 px-6 py-5">
+              <div className="rounded-[2rem] border border-amber-200 bg-amber-50/95 px-6 py-5 shadow-[0_18px_40px_rgba(245,158,11,0.10)]">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
                     <div className="text-xs font-black uppercase tracking-widest text-amber-700">{t("account_verify_email")}</div>
@@ -547,20 +548,26 @@ export default function SettingsPage() {
                         : t("account_unverified_email_notice", { email: me.email })}
                     </div>
                   </div>
-                  <button
+                  <Button
                     type="button"
                     disabled={verificationSending}
                     onClick={() => void sendVerification()}
-                    className="rounded-2xl bg-amber-600 px-5 py-3 font-black text-white transition hover:bg-amber-700 disabled:opacity-60"
+                    className="bg-amber-600 hover:bg-amber-700 shadow-none"
                   >
                     {verificationSending ? t("common_please_wait") : t("account_resend_verification")}
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : null}
 
             {profileMessage ? (
-              <div className={`rounded-2xl p-4 text-sm font-black ${profileMessage.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+              <div
+                className={`rounded-2xl p-4 text-sm font-black ${
+                  profileMessage.type === "success"
+                    ? "border border-green-100 bg-green-50 text-green-700 shadow-[0_14px_34px_rgba(34,197,94,0.08)]"
+                    : "border border-red-100 bg-red-50 text-red-700 shadow-[0_14px_34px_rgba(239,68,68,0.08)]"
+                }`}
+              >
                 {profileMessage.text}
               </div>
             ) : null}
@@ -578,7 +585,7 @@ export default function SettingsPage() {
                             {resolvedAvatarInitial}
                           </div>
                         )}
-                        <label className="mt-4 inline-flex cursor-pointer rounded-2xl bg-gray-900 px-4 py-2 font-black text-white transition hover:bg-blue-600">
+                        <label className="mt-4 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-[1rem] border border-transparent bg-[linear-gradient(135deg,_rgba(2,42,107,0.98),_rgba(12,60,125,0.94)_55%,_rgba(255,106,26,0.94))] px-4 text-sm font-black tracking-[-0.01em] text-white shadow-[0_20px_48px_rgba(2,42,107,0.22)] transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_26px_60px_rgba(2,42,107,0.28)]">
                           {t("account_avatar_upload")}
                           <input type="file" accept="image/*" className="hidden" onChange={onAvatarChange} />
                         </label>
@@ -591,7 +598,7 @@ export default function SettingsPage() {
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <div>
                         <div className="text-xs font-black uppercase tracking-widest text-gray-400">{t("account_display_name")}</div>
-                        <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-900" />
+                        <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="mt-2" />
                       </div>
                       <div>
                         <div className="text-xs font-black uppercase tracking-widest text-gray-400">{t("auth_email")}</div>
@@ -599,24 +606,23 @@ export default function SettingsPage() {
                       </div>
                       <div>
                         <div className="text-xs font-black uppercase tracking-widest text-gray-400">{t("auth_phone")}</div>
-                        <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-900" />
+                        <Input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="mt-2" />
                       </div>
                       <div>
                         <div className="text-xs font-black uppercase tracking-widest text-gray-400">{t("auth_country")}</div>
-                        <input value={country} onChange={(e) => setCountry(e.target.value)} className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-900" />
+                        <Input value={country} onChange={(e) => setCountry(e.target.value)} className="mt-2" />
                       </div>
                     </div>
                   </div>
 
                   <div className="mt-5 flex justify-end">
-                    <button
+                    <Button
                       type="button"
                       disabled={profileSaving}
                       onClick={() => void saveProfile()}
-                      className="rounded-2xl bg-blue-600 px-6 py-3 font-black text-white transition hover:bg-blue-700 disabled:opacity-60"
                     >
                       {profileSaving ? t("common_please_wait") : t("account_save_profile")}
-                    </button>
+                    </Button>
                   </div>
                 </SectionCard>
 
@@ -666,14 +672,15 @@ export default function SettingsPage() {
                   description={t("account_email_status_desc")}
                   actions={
                     !accountVerified ? (
-                      <button
+                        <Button
                         type="button"
                         disabled={verificationSending}
                         onClick={() => void sendVerification()}
-                        className="rounded-2xl border border-gray-200 bg-white px-4 py-2 text-xs font-black text-gray-900 transition hover:border-blue-200 hover:text-blue-700 disabled:opacity-60"
+                          variant="secondary"
+                          size="sm"
                       >
                         {verificationSending ? t("common_please_wait") : t("account_resend_verification")}
-                      </button>
+                        </Button>
                     ) : null
                   }
                 >
@@ -698,23 +705,23 @@ export default function SettingsPage() {
                   <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto]">
                     <div>
                       <div className="text-xs font-black uppercase tracking-widest text-gray-400">{t("account_new_email")}</div>
-                      <input
+                      <Input
                         value={emailChange}
                         onChange={(e) => setEmailChange(e.target.value)}
                         type="email"
-                        className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-900"
+                        className="mt-2"
                         placeholder="name@example.com"
                       />
                     </div>
                     <div className="flex items-end">
-                      <button
+                      <Button
                         type="button"
                         disabled={emailSaving}
                         onClick={() => void requestEmailUpdate()}
-                        className="w-full rounded-2xl bg-gray-900 px-6 py-3 font-black text-white transition hover:bg-blue-600 disabled:opacity-60 md:w-auto"
+                        className="w-full md:w-auto"
                       >
                         {emailSaving ? t("common_please_wait") : t("account_update_email")}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </SectionCard>
@@ -771,20 +778,22 @@ export default function SettingsPage() {
                   description={t("account_security_overview_desc")}
                   actions={
                     <>
-                      <button
+                      <Button
                         type="button"
                         onClick={() => jumpTo("password-section")}
-                        className="rounded-2xl border border-gray-200 bg-white px-4 py-2 text-xs font-black text-gray-900 transition hover:border-blue-200 hover:text-blue-700"
+                        variant="secondary"
+                        size="sm"
                       >
                         {t("settings_change_password")}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
                         onClick={() => jumpTo("sessions-section")}
-                        className="rounded-2xl border border-gray-200 bg-white px-4 py-2 text-xs font-black text-gray-900 transition hover:border-blue-200 hover:text-blue-700"
+                        variant="secondary"
+                        size="sm"
                       >
                         {t("account_manage_sessions")}
-                      </button>
+                      </Button>
                     </>
                   }
                 >
@@ -864,14 +873,15 @@ export default function SettingsPage() {
                 description={t("account_manage_sessions_desc")}
                 actions={
                   otherSessions.length > 0 ? (
-                    <button
+                    <Button
                       type="button"
                       disabled={revokeOthersSaving}
                       onClick={() => void revokeOtherSessions()}
-                      className="rounded-2xl border border-gray-200 bg-white px-4 py-2 text-xs font-black text-gray-900 transition hover:border-blue-200 hover:text-blue-700 disabled:opacity-60"
+                      variant="secondary"
+                      size="sm"
                     >
                       {revokeOthersSaving ? t("common_please_wait") : t("account_other_sessions_revoke")}
-                    </button>
+                    </Button>
                   ) : null
                 }
               >
@@ -895,14 +905,14 @@ export default function SettingsPage() {
                             <div className="mt-1 text-sm font-medium text-gray-500">{t("account_session_started", { date: formatDateTime(session.created_at) })}</div>
                             {session.ip_address ? <div className="mt-1 text-sm font-medium text-gray-500">{t("account_session_ip", { ip: session.ip_address })}</div> : null}
                           </div>
-                          <button
+                          <Button
                             type="button"
                             disabled={sessionBusyId === session.session_id}
                             onClick={() => void revokeSession(session.session_id)}
-                            className="rounded-2xl bg-gray-900 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-600 disabled:opacity-60"
+                            size="sm"
                           >
                             {sessionBusyId === session.session_id ? t("common_please_wait") : t(session.is_current ? "account_session_sign_out_current" : "account_session_sign_out")}
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     ))
@@ -912,7 +922,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <button
+              <Button
                 type="button"
                 onClick={() => {
                   void (async () => {
@@ -920,10 +930,9 @@ export default function SettingsPage() {
                     window.location.href = "/";
                   })();
                 }}
-                className="rounded-2xl bg-gray-900 px-6 py-4 font-black text-white shadow-lg transition hover:bg-blue-600"
               >
                 {t("nav_logout")}
-              </button>
+              </Button>
             </div>
           </>
         )}

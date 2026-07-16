@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import { api, CommunityPost, CommunityPostKind, CommunityComment, getStoredToken } from "@/lib/api";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { Button, Card, CardDescription, CardHeader, CardTitle, Input } from "@/components/ui";
 
 type CommunityTab = "trending" | "latest" | "qa" | "partners";
 
@@ -208,21 +209,19 @@ export default function CommunityPage() {
 
       <div className="mt-10 grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-3">
-          <div className="bg-white rounded-[2rem] border border-gray-100 p-6 shadow-sm">
+          <Card>
             <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t("community_categories")}</div>
             <div className="flex flex-wrap gap-2">
               {tags.map((tag) => (
-                <button
+                <Button
                   key={tag.id}
+                  type="button"
                   onClick={() => setActiveTag(tag.id)}
-                  className={`px-3 py-2 rounded-2xl text-xs font-black transition-all ${
-                    activeTag === tag.id
-                      ? "bg-blue-600 text-white shadow-sm shadow-blue-100"
-                      : "bg-gray-50 text-gray-700 hover:bg-gray-100"
-                  }`}
+                  variant={activeTag === tag.id ? "primary" : "secondary"}
+                  size="sm"
                 >
                   {tag.label}
-                </button>
+                </Button>
               ))}
             </div>
             <div className="mt-6 border-t border-gray-100 pt-6">
@@ -240,7 +239,7 @@ export default function CommunityPage() {
                   <div className="text-sm text-gray-500 font-medium">{t("community_identity")}</div>
                 </div>
               </div>
-              <button
+              <Button
                 type="button"
                 onClick={() => {
                   setComposerStatus("idle");
@@ -249,16 +248,17 @@ export default function CommunityPage() {
                   setEditingPost(null);
                   setComposerOpen(true);
                 }}
-                className="mt-4 w-full bg-gray-900 hover:bg-blue-600 text-white font-black py-3 rounded-2xl transition-all"
+                fullWidth
+                className="mt-4"
               >
                 {t("community_create_post")}
-              </button>
+              </Button>
             </div>
-          </div>
+          </Card>
         </div>
 
         <div className="lg:col-span-6">
-          <div className="bg-white rounded-[2rem] border border-gray-100 p-6 shadow-sm">
+          <Card>
             <div className="flex flex-col md:flex-row md:flex-wrap gap-3 md:items-center md:justify-between">
               <div className="flex flex-wrap gap-2 min-w-0">
                 {(
@@ -269,49 +269,47 @@ export default function CommunityPage() {
                     { id: "partners", label: t("community_tab_partners") },
                   ] as const satisfies ReadonlyArray<{ id: CommunityTab; label: string }>
                 ).map((tab) => (
-                  <button
+                  <Button
                     key={tab.id}
+                    type="button"
                     onClick={() => setActiveTab(tab.id)}
-                    className={`px-4 py-2 rounded-2xl text-sm font-black transition-all ${
-                      activeTab === tab.id ? "bg-blue-600 text-white shadow-sm shadow-blue-100" : "bg-gray-50 text-gray-700 hover:bg-gray-100"
-                    }`}
+                    variant={activeTab === tab.id ? "primary" : "secondary"}
+                    size="sm"
                   >
                     {tab.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
-              <div className="relative w-full md:w-80">
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={t("community_search")}
-                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 pl-11 font-bold text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">🔎</div>
-              </div>
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("community_search")}
+                className="md:w-80"
+                leadingIcon={<span aria-hidden="true">🔎</span>}
+              />
             </div>
-          </div>
+          </Card>
 
           <div className="mt-6 space-y-6">
             {loading ? (
-              <div className="bg-white rounded-[2.5rem] border border-gray-100 py-20 text-center font-bold text-gray-500">
+              <Card className="py-20 text-center">
                 {t("common_loading")}
-              </div>
+              </Card>
             ) : fetchError ? (
-              <div className="bg-white rounded-[2.5rem] border border-dashed border-gray-200 py-16 text-center">
+              <Card className="border-dashed py-16 text-center">
                 <div className="text-2xl font-black text-gray-900">{fetchError}</div>
-                <button
+                <Button
                   type="button"
                   onClick={() => void fetchPosts({ reset: true })}
-                  className="mt-6 bg-gray-900 hover:bg-blue-600 text-white font-black px-6 py-3 rounded-2xl transition-all"
+                  className="mt-6"
                 >
                   {t("common_try_again")}
-                </button>
-              </div>
+                </Button>
+              </Card>
             ) : posts.map((post) => {
               const identity = getDisplayIdentity(post.user_id, post.user);
               return (
-                <div key={post.id} className="bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden shadow-sm hover:shadow-[0_30px_60px_-20px_rgba(0,0,0,0.15)] transition-all duration-500">
+                <Card key={post.id} className="overflow-hidden p-0 hover:-translate-y-1 hover:shadow-[0_30px_72px_rgba(15,23,42,0.14)]">
                   {post.image_url ? (
                     <div className="relative h-64">
                       <Image src={post.image_url} alt={post.title} fill className="object-cover" sizes="(max-width: 768px) 100vw, 700px" />
@@ -348,14 +346,13 @@ export default function CommunityPage() {
                           </div>
                           <div className="mt-3 text-2xl font-black text-gray-900">{post.title}</div>
                         </div>
-                        <button
+                        <Button
                           onClick={() => void onToggleBookmark(post.id)}
-                          className={`px-4 py-2 rounded-2xl border text-sm font-black transition-all ${
-                            post.bookmarked ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-                          }`}
+                          variant={post.bookmarked ? "primary" : "secondary"}
+                          size="sm"
                         >
                           {post.bookmarked ? t("community_saved") : t("community_save")}
-                        </button>
+                        </Button>
                       </div>
                     )}
 
@@ -374,25 +371,26 @@ export default function CommunityPage() {
                       <div className="ml-auto flex items-center gap-2">
                         <Link
                           href={`/community/posts/${post.id}`}
-                          className="px-4 py-2 rounded-2xl bg-gray-50 hover:bg-gray-100 border border-gray-100 text-sm font-black text-gray-800 transition-all"
+                          className="inline-flex min-h-10 items-center justify-center rounded-[1rem] border border-white/70 bg-white/85 px-4 text-sm font-black text-slate-900 shadow-[0_18px_44px_rgba(15,23,42,0.08)] transition duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_24px_54px_rgba(15,23,42,0.12)]"
                         >
                           {t("community_open")}
                         </Link>
                         {me && me.role !== "admin" && me.id !== post.user_id ? (
-                          <button
+                          <Button
                             type="button"
                             onClick={() => {
                               setReportStatus("idle");
                               setReportReason("");
                               setReportingPost(post);
                             }}
-                            className="px-4 py-2 rounded-2xl bg-white hover:bg-gray-50 border border-gray-200 text-sm font-black text-gray-800 transition-all"
+                            variant="secondary"
+                            size="sm"
                           >
                             {t("community_report")}
-                          </button>
+                          </Button>
                         ) : null}
                         {canEditPost(post) ? (
-                          <button
+                          <Button
                             type="button"
                             onClick={() => {
                               setEditingPost(post);
@@ -401,13 +399,14 @@ export default function CommunityPage() {
                               setComposerStatus("idle");
                               setComposerOpen(true);
                             }}
-                            className="px-4 py-2 rounded-2xl bg-white hover:bg-gray-50 border border-gray-200 text-sm font-black text-gray-800 transition-all"
+                            variant="secondary"
+                            size="sm"
                           >
                             {t("common_edit")}
-                          </button>
+                          </Button>
                         ) : null}
                         {canEditPost(post) ? (
-                          <button
+                          <Button
                             type="button"
                             onClick={async () => {
                               if (!confirm(t("common_confirm_delete"))) return;
@@ -416,10 +415,11 @@ export default function CommunityPage() {
                                 setPosts((prev) => prev.filter((p) => p.id !== post.id));
                               } catch {}
                             }}
-                            className="px-4 py-2 rounded-2xl bg-white hover:bg-gray-50 border border-gray-200 text-sm font-black text-gray-800 transition-all"
+                            variant="danger"
+                            size="sm"
                           >
                             {t("common_delete")}
-                          </button>
+                          </Button>
                         ) : null}
                       </div>
                     </div>
@@ -430,67 +430,68 @@ export default function CommunityPage() {
 
                     <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
-                        <button
+                        <Button
                           onClick={() => void onToggleLike(post.id)}
-                          className={`px-4 py-2 rounded-2xl text-sm font-black transition-all border ${
-                            post.liked ? "bg-red-50 text-red-600 border-red-100" : "bg-gray-50 text-gray-800 border-gray-100 hover:bg-gray-100"
-                          }`}
+                          variant={post.liked ? "danger" : "secondary"}
+                          size="sm"
                         >
                           ♥ {post.likes_count}
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           onClick={() => void openComments(post)}
-                          className="px-4 py-2 rounded-2xl text-sm font-black bg-gray-50 text-gray-800 border border-gray-100 hover:bg-gray-100 transition-all"
+                          variant="secondary"
+                          size="sm"
                         >
                           💬 {post.comments_count}
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           onClick={() => void onShare(post.id)}
-                          className="px-4 py-2 rounded-2xl text-sm font-black bg-gray-50 text-gray-800 border border-gray-100 hover:bg-gray-100 transition-all"
+                          variant="secondary"
+                          size="sm"
                         >
                           ↗ {post.shares_count}
-                        </button>
+                        </Button>
                       </div>
-                      <button
+                      <Button
                         onClick={() => void onToggleBookmark(post.id)}
-                        className={`px-4 py-2 rounded-2xl text-sm font-black transition-all border ${
-                          post.bookmarked ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-                        }`}
+                        variant={post.bookmarked ? "primary" : "secondary"}
+                        size="sm"
                       >
                         {post.bookmarked ? t("community_bookmarked") : t("community_bookmark")}
-                      </button>
+                      </Button>
                     </div>
                   </div>
-                </div>
+                </Card>
               );
             })}
 
             {!loading && !fetchError && posts.length === 0 && (
-              <div className="bg-white rounded-[2.5rem] border border-dashed border-gray-200 py-20 text-center">
+              <Card className="border-dashed py-20 text-center">
                 <div className="text-6xl mb-5">🧭</div>
                 <div className="text-2xl font-black text-gray-900">{t("community_no_posts")}</div>
                 <div className="text-gray-500 font-medium mt-2">{t("community_no_posts_subtitle")}</div>
-              </div>
+              </Card>
             )}
 
             {!loading && !fetchError && posts.length > 0 && hasMore ? (
               <div className="pt-2">
-                <button
+                <Button
                   type="button"
                   onClick={() => void fetchPosts({ reset: false })}
-                  className="w-full bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black py-3 rounded-2xl transition-all"
+                  variant="secondary"
+                  fullWidth
                 >
                   {t("common_load_more")}
-                </button>
+                </Button>
               </div>
             ) : null}
           </div>
         </div>
 
         <div className="lg:col-span-3">
-          <div className="bg-white rounded-[2rem] border border-gray-100 p-6 shadow-sm">
+          <Card>
             <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t("community_trending")}</div>
             <div className="space-y-4">
               {posts.slice(0, 5).map((p, idx) => (
@@ -512,7 +513,7 @@ export default function CommunityPage() {
                 </button>
               ))}
             </div>
-          </div>
+          </Card>
         </div>
       </div>
 
@@ -524,19 +525,20 @@ export default function CommunityPage() {
           aria-modal="true"
         >
           <div
-            className="w-full max-w-2xl bg-white rounded-[2.5rem] overflow-hidden border border-gray-100 shadow-2xl"
+            className="w-full max-w-2xl overflow-hidden rounded-[2.5rem] border border-white/70 bg-white/88 shadow-[0_36px_96px_rgba(15,23,42,0.22)] backdrop-blur-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-8">
               <div className="flex items-center justify-between gap-4">
                 <div className="text-2xl font-black text-gray-900">{editingPost ? t("community_edit_post") : t("community_compose_title")}</div>
-                <button
+                <Button
                   type="button"
                   onClick={() => setComposerOpen(false)}
-                  className="px-4 py-2 rounded-2xl bg-gray-50 hover:bg-gray-100 border border-gray-100 font-black text-gray-800"
+                  variant="secondary"
+                  size="sm"
                 >
                   {t("common_close")}
-                </button>
+                </Button>
               </div>
 
               <form
@@ -583,12 +585,11 @@ export default function CommunityPage() {
                   })();
                 }}
               >
-                <input
+                <Input
                   name="title"
                   required
                   placeholder={t("community_compose_title_placeholder")}
                   defaultValue={editingPost?.title || ""}
-                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 font-bold text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <textarea
                   name="body"
@@ -596,7 +597,7 @@ export default function CommunityPage() {
                   rows={5}
                   placeholder={t("community_compose_body_placeholder")}
                   defaultValue={editingPost?.body || ""}
-                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 font-bold text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-[1.5rem] border border-white/75 bg-white/86 px-4 py-3 font-bold text-gray-900 placeholder-gray-400 shadow-[0_16px_40px_rgba(15,23,42,0.08)] outline-none transition focus:border-blue-200 focus:ring-4 focus:ring-blue-100/80"
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <select
@@ -621,20 +622,19 @@ export default function CommunityPage() {
                     ))}
                   </select>
                 </div>
-                <input
+                <Input
                   name="imageUrl"
                   placeholder={t("community_compose_image_placeholder")}
                   defaultValue={editingPost?.image_url || ""}
-                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 font-bold text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <button
+                  <Button
                     type="button"
                     onClick={() => composerFileRef.current?.click()}
-                    className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-6 py-3 rounded-2xl transition-all"
+                    variant="secondary"
                   >
                     {t("community_upload_images")}
-                  </button>
+                  </Button>
                   <div className="text-sm font-bold text-gray-500 flex items-center">
                     {composerImages.length ? t("community_images_count", { count: composerImages.length }) : t("community_images_optional")}
                   </div>
@@ -684,9 +684,9 @@ export default function CommunityPage() {
                     ))}
                   </div>
                 ) : null}
-                <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-2xl transition-all shadow-lg shadow-blue-100">
+                <Button fullWidth>
                   {editingPost ? t("community_save_post") : t("community_compose_publish")}
-                </button>
+                </Button>
                 {composerStatus === "success" && (
                   <div className="text-sm font-bold text-green-700 bg-green-50 border border-green-100 rounded-2xl p-4">
                     {t("community_compose_success")}
@@ -719,7 +719,7 @@ export default function CommunityPage() {
           aria-modal="true"
         >
           <div
-            className="w-full max-w-3xl bg-white rounded-[2.5rem] overflow-hidden border border-gray-100 shadow-2xl"
+            className="w-full max-w-3xl overflow-hidden rounded-[2.5rem] border border-white/70 bg-white/88 shadow-[0_36px_96px_rgba(15,23,42,0.22)] backdrop-blur-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-8">
@@ -728,32 +728,32 @@ export default function CommunityPage() {
                   <div className="text-2xl font-black text-gray-900 truncate">{t("community_comments")}</div>
                   <div className="mt-1 text-sm text-gray-500 font-bold truncate">{commentsPost.title}</div>
                 </div>
-                <button
+                <Button
                   type="button"
                   onClick={() => {
                     setCommentsPost(null);
                     setEditingComment(null);
                   }}
-                  className="px-4 py-2 rounded-2xl bg-gray-50 hover:bg-gray-100 border border-gray-100 font-black text-gray-800"
+                  variant="secondary"
+                  size="sm"
                 >
                   {t("common_close")}
-                </button>
+                </Button>
               </div>
 
               <div className="mt-6 flex gap-3">
-                <input
+                <Input
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
                   placeholder={t("community_comment_placeholder")}
-                  className="flex-1 bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 font-bold text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1"
                 />
-                <button
+                <Button
                   type="button"
                   onClick={() => void submitComment()}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-black px-6 py-3 rounded-2xl transition-all"
                 >
                   {t("community_comment_send")}
-                </button>
+                </Button>
               </div>
 
               <div className="mt-6 space-y-4 max-h-[60vh] overflow-auto pr-2">
@@ -783,10 +783,10 @@ export default function CommunityPage() {
                           <div className="min-w-0">
                             <div className="font-black text-gray-900">{identity.name}</div>
                           {editingComment?.id === c.id ? (
-                            <input
+                            <Input
                               value={editingComment.body}
                               onChange={(e) => setEditingComment({ ...editingComment, body: e.target.value })}
-                              className="mt-3 w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="mt-3 w-full"
                             />
                           ) : (
                             <div className="mt-3 text-gray-700 font-medium whitespace-pre-wrap">{c.body}</div>
@@ -796,7 +796,7 @@ export default function CommunityPage() {
                         {canEditComment(c) ? (
                           <div className="flex gap-2">
                             {editingComment?.id === c.id ? (
-                              <button
+                              <Button
                                 type="button"
                                 onClick={async () => {
                                   try {
@@ -805,20 +805,21 @@ export default function CommunityPage() {
                                     setEditingComment(null);
                                   } catch {}
                                 }}
-                                className="px-4 py-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black transition-all"
+                                size="sm"
                               >
                                 {t("common_save")}
-                              </button>
+                              </Button>
                             ) : (
-                              <button
+                              <Button
                                 type="button"
                                 onClick={() => setEditingComment(c)}
-                                className="px-4 py-2 rounded-2xl bg-white hover:bg-gray-100 border border-gray-200 font-black text-gray-800 transition-all"
+                                variant="secondary"
+                                size="sm"
                               >
                                 {t("common_edit")}
-                              </button>
+                              </Button>
                             )}
-                            <button
+                            <Button
                               type="button"
                               onClick={async () => {
                                 if (!confirm(t("common_confirm_delete"))) return;
@@ -830,10 +831,11 @@ export default function CommunityPage() {
                                   );
                                 } catch {}
                               }}
-                              className="px-4 py-2 rounded-2xl bg-white hover:bg-gray-100 border border-gray-200 font-black text-gray-800 transition-all"
+                              variant="danger"
+                              size="sm"
                             >
                               {t("common_delete")}
-                            </button>
+                            </Button>
                           </div>
                         ) : null}
                       </div>
@@ -850,19 +852,20 @@ export default function CommunityPage() {
 
       {reportingPost ? (
         <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-xl bg-white rounded-[2.5rem] border border-gray-100 shadow-2xl overflow-hidden">
+          <div className="w-full max-w-xl overflow-hidden rounded-[2.5rem] border border-white/70 bg-white/88 shadow-[0_36px_96px_rgba(15,23,42,0.22)] backdrop-blur-xl">
             <div className="px-8 py-6 border-b border-gray-100 flex items-start justify-between gap-4">
               <div>
                 <div className="text-xl font-black text-gray-900">{t("community_report_title")}</div>
                 <div className="mt-1 text-sm font-bold text-gray-500">{t("community_report_subtitle")}</div>
               </div>
-              <button
+              <Button
                 type="button"
                 onClick={() => setReportingPost(null)}
-                className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition"
+                variant="secondary"
+                size="sm"
               >
                 {t("common_close")}
-              </button>
+              </Button>
             </div>
             <div className="p-8 space-y-4">
               <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
@@ -873,7 +876,7 @@ export default function CommunityPage() {
                 value={reportReason}
                 onChange={(e) => setReportReason(e.target.value)}
                 rows={5}
-                className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 font-bold text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-[1.5rem] border border-white/75 bg-white/86 px-4 py-3 font-bold text-gray-900 placeholder-gray-400 shadow-[0_16px_40px_rgba(15,23,42,0.08)] outline-none transition focus:border-blue-200 focus:ring-4 focus:ring-blue-100/80"
                 placeholder={t("community_report_placeholder")}
               />
               {reportStatus === "success" ? (
@@ -887,14 +890,14 @@ export default function CommunityPage() {
               ) : null}
             </div>
             <div className="px-8 py-6 border-t border-gray-100 bg-gray-50/30 flex flex-col sm:flex-row gap-3 sm:justify-end">
-              <button
+              <Button
                 type="button"
                 onClick={() => setReportingPost(null)}
-                className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-6 py-3 rounded-2xl transition"
+                variant="secondary"
               >
                 {t("common_cancel")}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 disabled={reportStatus === "saving"}
                 onClick={() => {
@@ -909,12 +912,9 @@ export default function CommunityPage() {
                     }
                   })();
                 }}
-                className={`font-black px-6 py-3 rounded-2xl transition ${
-                  reportStatus === "saving" ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-200"
-                }`}
               >
                 {reportStatus === "saving" ? t("common_please_wait") : t("community_report_submit")}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLanguage } from "@/context/LanguageContext";
 import { api, BlogArticleSummary } from "@/lib/api";
+import { Button, Card, CardDescription, CardHeader, CardTitle, Input } from "@/components/ui";
 
 export default function BlogPage() {
   const { t, language } = useLanguage();
@@ -70,7 +71,8 @@ export default function BlogPage() {
   const filtered = useMemo(() => posts.slice(featured ? 1 : 0), [featured, posts]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-10">
+    <div className="tp-page-shell">
+      <div className="relative z-[1] max-w-7xl mx-auto px-4 py-10">
       <PageHeader
         title={t("blog_title")}
         subtitle={t("blog_subtitle")}
@@ -81,16 +83,16 @@ export default function BlogPage() {
       <div className="mt-10 grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8">
           {loading ? (
-            <div className="bg-white rounded-[2.5rem] border border-gray-100 py-20 text-center font-bold text-gray-500">
+            <Card className="py-20 text-center">
               {t("common_loading")}
-            </div>
+            </Card>
           ) : fetchError ? (
-            <div className="bg-white rounded-[2.5rem] border border-dashed border-gray-200 py-20 text-center">
+            <Card className="border-dashed py-20 text-center">
               <div className="text-2xl font-black text-gray-900">{fetchError}</div>
               <div className="mt-2 text-gray-500 font-medium">{t("blog_load_failed_subtitle")}</div>
-            </div>
+            </Card>
           ) : featured ? (
-            <div className="bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden shadow-sm hover:shadow-[0_30px_60px_-20px_rgba(0,0,0,0.15)] transition-all duration-500">
+            <Card className="overflow-hidden p-0 hover:-translate-y-1 hover:shadow-[0_30px_72px_rgba(15,23,42,0.14)]">
               <div className="relative h-80">
                 <Image
                   src={featured.cover_image_url || placeholderCover}
@@ -122,8 +124,9 @@ export default function BlogPage() {
                   >
                     {t("blog_read_article")}
                   </Link>
-                  <button
+                  <Button
                     type="button"
+                    variant="secondary"
                     onClick={() => {
                       setSaved((prev) => {
                         const next = new Set(prev);
@@ -133,51 +136,48 @@ export default function BlogPage() {
                         return next;
                       });
                     }}
-                    className="bg-gray-50 hover:bg-gray-100 text-gray-800 font-black px-6 py-3 rounded-2xl transition-all border border-gray-100"
                   >
                     {saved.has(featured.slug) ? t("blog_saved") : t("blog_save")}
-                  </button>
+                  </Button>
                 </div>
               </div>
-            </div>
+            </Card>
           ) : (
-            <div className="bg-white rounded-[2.5rem] border border-dashed border-gray-200 py-20 text-center">
+            <Card className="border-dashed py-20 text-center">
               <div className="text-6xl mb-5">📰</div>
               <div className="text-2xl font-black text-gray-900">{t("blog_empty_title")}</div>
               <div className="text-gray-500 font-medium mt-2">{t("blog_empty_subtitle")}</div>
-            </div>
+            </Card>
           )}
 
-          <div className="mt-8 bg-white rounded-[2rem] border border-gray-100 p-6 shadow-sm">
+          <Card className="mt-8">
             <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
               <div className="flex flex-wrap gap-2">
                 {categories.map((c) => (
-                  <button
+                  <Button
                     key={c.id}
+                    type="button"
                     onClick={() => setActiveCategory(c.id)}
-                    className={`px-3 py-2 rounded-2xl text-xs font-black transition-all ${
-                      activeCategory === c.id ? "bg-blue-600 text-white shadow-sm shadow-blue-100" : "bg-gray-50 text-gray-700 hover:bg-gray-100"
-                    }`}
+                    variant={activeCategory === c.id ? "primary" : "secondary"}
+                    size="sm"
                   >
                     {c.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
-              <div className="relative">
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={t("blog_search")}
-                  className="w-full md:w-72 bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 pl-11 font-bold text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">🔎</div>
-              </div>
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("blog_search")}
+                className="md:w-72"
+                leadingIcon={<span aria-hidden="true">🔎</span>}
+              />
             </div>
-          </div>
+          </Card>
 
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
             {filtered.map((p) => (
-              <div key={p.id} className="bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden shadow-sm hover:shadow-[0_30px_60px_-20px_rgba(0,0,0,0.15)] transition-all duration-500 group">
+              <Card key={p.id} className="group overflow-hidden p-0 hover:-translate-y-1 hover:shadow-[0_30px_72px_rgba(15,23,42,0.14)]">
                 <div className="relative h-48">
                   <Image
                     src={p.cover_image_url || placeholderCover}
@@ -209,8 +209,9 @@ export default function BlogPage() {
                     >
                       {t("blog_read")}
                     </Link>
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
                       onClick={() => {
                         setSaved((prev) => {
                           const next = new Set(prev);
@@ -220,13 +221,12 @@ export default function BlogPage() {
                           return next;
                         });
                       }}
-                      className="px-5 py-3 rounded-2xl bg-gray-50 hover:bg-gray-100 border border-gray-100 font-black text-gray-800 transition-all"
                     >
                       {saved.has(p.slug) ? t("blog_saved") : t("blog_save")}
-                    </button>
+                    </Button>
                   </div>
                 </div>
-              </div>
+              </Card>
             ))}
           </div>
 
@@ -263,9 +263,9 @@ export default function BlogPage() {
                   required
                   name="email"
                   placeholder={t("blog_newsletter_email")}
-                  className="flex-1 bg-white/10 border border-white/20 rounded-2xl px-5 py-4 font-bold text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/40"
+                  className="flex-1 rounded-[1.4rem] border border-white/20 bg-white/12 px-5 py-4 font-bold text-white placeholder-white/60 outline-none transition focus:border-white/35 focus:ring-4 focus:ring-white/15"
                 />
-                <button className="bg-white text-blue-700 font-black px-8 py-4 rounded-2xl hover:bg-blue-50 transition-all shadow-xl">
+                <button className="rounded-[1.25rem] bg-white px-8 py-4 font-black text-blue-700 shadow-[0_20px_48px_rgba(15,23,42,0.14)] transition hover:-translate-y-0.5 hover:bg-blue-50">
                   {t("blog_subscribe")}
                 </button>
               </form>
@@ -284,7 +284,7 @@ export default function BlogPage() {
         </div>
 
         <div className="lg:col-span-4">
-          <div className="bg-white rounded-[2rem] border border-gray-100 p-6 shadow-sm">
+          <Card>
             <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t("blog_popular")}</div>
             <div className="space-y-4">
               {popular.map((p, idx) => (
@@ -301,9 +301,9 @@ export default function BlogPage() {
                 </Link>
               ))}
             </div>
-          </div>
+          </Card>
 
-          <div className="mt-6 bg-white rounded-[2rem] border border-gray-100 p-6 shadow-sm">
+          <Card className="mt-6">
             <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t("blog_topics")}</div>
             <div className="flex flex-wrap gap-2">
               {[
@@ -314,35 +314,39 @@ export default function BlogPage() {
                 t("blog_topic_photography"),
                 t("blog_topic_local_food"),
               ].map((topic) => (
-                <button
+                <Button
                   key={topic}
                   type="button"
                   onClick={() => setQuery(topic)}
-                  className="px-3 py-2 rounded-2xl text-xs font-black bg-gray-50 text-gray-700 hover:bg-gray-100 transition-all border border-gray-100"
+                  variant="secondary"
+                  size="sm"
                 >
                   {topic}
-                </button>
+                </Button>
               ))}
             </div>
-          </div>
+          </Card>
 
-          <div className="mt-6 bg-white rounded-[2rem] border border-gray-100 p-6 shadow-sm">
-            <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t("blog_about")}</div>
-            <div className="text-gray-600 font-medium leading-relaxed">
+          <Card className="mt-6">
+            <CardHeader>
+              <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("blog_about")}</div>
+              <CardDescription className="pt-2 text-base leading-relaxed">
               {t("blog_about_text")}
-            </div>
-            <button
+              </CardDescription>
+            </CardHeader>
+            <Button
               type="button"
               onClick={() => (window.location.href = "mailto:support@tourpie.travel")}
-              className="mt-5 w-full bg-gray-900 hover:bg-blue-600 text-white font-black py-3 rounded-2xl transition-all"
+              fullWidth
+              className="mt-5"
             >
               {t("blog_write")}
-            </button>
-          </div>
+            </Button>
+          </Card>
         </div>
       </div>
 
+      </div>
     </div>
   );
 }
-

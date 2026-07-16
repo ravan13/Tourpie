@@ -341,7 +341,7 @@ export default function PackageModal({ isOpen, onClose, onSuccess, editingPackag
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       if (message.toLowerCase().includes("not authenticated") || message.toLowerCase().includes("invalid token")) {
-        clearSessionToken();
+        await clearSessionToken();
         alert(t("package_modal_error_session_expired"));
         window.location.href = "/login";
         return;

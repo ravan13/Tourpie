@@ -1,50 +1,50 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { api, broadcastLogout, clearSessionToken, getStoredTokenPayload, isAuthErrorMessage, markSessionExpired } from "@/lib/api";
+import { broadcastLogout, clearSessionToken, getStoredTokenPayload, markSessionExpired } from "@/lib/api";
 import { useLanguage } from "@/context/LanguageContext";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { t } = useLanguage();
   const router = useRouter();
-  const [ready, setReady] = useState(false);
+  const { authReady, user } = useCurrentUser();
 
   useEffect(() => {
-    void (async () => {
-      const payload = getStoredTokenPayload();
-      const role = typeof payload?.role === "string" ? payload.role : null;
-      if (!role) {
-        router.replace("/login");
-        return;
-      }
-      if (role === "admin") {
-        router.replace("/admin");
-        return;
-      }
-      if (role === "agency") {
-        router.replace("/agency");
-        return;
-      }
-      try {
-        const me = await api.auth.me();
-        if (me?.onboarding_completed === false) {
-          router.replace("/login");
-          return;
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (isAuthErrorMessage(message)) {
-          markSessionExpired("auth");
-          broadcastLogout("auth");
-          clearSessionToken();
-          router.replace("/login?reason=session_expired");
-          return;
-        }
-      }
-      setReady(true);
-    })();
-  }, [router]);
+    if (!authReady) return;
+    const payload = getStoredTokenPayload();
+    const role = typeof payload?.role === "string" ? payload.role : null;
+    if (!role) {
+      router.replace("/login");
+      return;
+    }
+    if (role === "admin") {
+      router.replace("/admin");
+      return;
+    }
+    if (role === "agency") {
+      router.replace("/agency");
+      return;
+    }
+    if (!user) {
+      void (async () => {
+        markSessionExpired("auth");
+        broadcastLogout("auth");
+        await clearSessionToken();
+        router.replace("/login?reason=session_expired");
+      })();
+      return;
+    }
+    if (user.onboarding_completed === false) {
+      router.replace("/login");
+      return;
+    }
+  }, [authReady, router, user]);
+
+  const payload = getStoredTokenPayload();
+  const role = typeof payload?.role === "string" ? payload.role : null;
+  const ready = authReady && role === "user" && !!user && user.onboarding_completed !== false;
 
   if (!ready) {
     return (

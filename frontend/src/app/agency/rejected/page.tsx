@@ -66,8 +66,10 @@ export default function AgencyRejectedPage() {
             <button
               type="button"
               onClick={() => {
-                clearSessionToken();
-                router.replace("/login");
+                void (async () => {
+                  await clearSessionToken();
+                  router.replace("/login");
+                })();
               }}
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition duration-200 shadow-lg shadow-blue-100"
             >

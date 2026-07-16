@@ -6,9 +6,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { useLanguage, Currency, Language } from "@/context/LanguageContext";
 import Logo from "./Logo";
 import {
-  Agency,
   api,
   clearSessionToken,
+  loadCurrentUser,
+  requestCurrentUserRefresh,
   getStoredToken,
   getStoredTokenPayload,
   isAuthErrorMessage,
@@ -16,6 +17,7 @@ import {
   SESSION_EXPIRED_KEY,
   SESSION_LOGOUT_KEY,
   setSessionToken,
+  syncCurrentUserProfile,
   touchSessionActivity,
   User,
 } from "@/lib/api";
@@ -50,8 +52,6 @@ export default function Navbar() {
   const [authReady, setAuthReady] = useState(false);
   const appReadyEmittedRef = useRef(false);
   const [me, setMe] = useState<User | null>(null);
-  const [myAgency, setMyAgency] = useState<Agency | null>(null);
-  const [storedAvatarUrl, setStoredAvatarUrl] = useState<string | null>(null);
   const [avatarBroken, setAvatarBroken] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
@@ -62,7 +62,7 @@ export default function Navbar() {
   const { language, setLanguage, currency, setCurrency, t } = useLanguage();
   const pathname = usePathname();
   const router = useRouter();
-  const isLoggedIn = authReady && !!getStoredToken();
+  const isLoggedIn = authReady && !!me;
   const [sessionWarningOpen, setSessionWarningOpen] = useState(false);
   const [sessionCountdownSec, setSessionCountdownSec] = useState<number>(0);
   const sessionWarningOpenRef = useRef(false);
@@ -98,16 +98,41 @@ export default function Navbar() {
     return () => window.removeEventListener("tourpie:auth", read);
   }, []);
 
-  const exitPreview = () => {
+  const exitPreview = async () => {
     if (!previewBackup) return;
     try {
       localStorage.removeItem("admin_preview_backup_token");
     } catch {
       return;
     }
-    setSessionToken(previewBackup);
+    await setSessionToken(previewBackup);
     setPreviewBackup(null);
     router.replace("/admin");
+  };
+
+  const persistUserPreferencePatch = async (patch: Partial<Pick<User, "preferred_language" | "preferred_currency">>) => {
+    if (!me) return;
+    syncCurrentUserProfile({ ...me, ...patch });
+    try {
+      const updated = await api.auth.updateProfile(patch);
+      syncCurrentUserProfile(updated);
+    } catch {
+      requestCurrentUserRefresh();
+    }
+  };
+
+  const handleLanguageChange = (nextLanguage: Language) => {
+    setLanguage(nextLanguage);
+    if (me) {
+      void persistUserPreferencePatch({ preferred_language: nextLanguage });
+    }
+  };
+
+  const handleCurrencyChange = (nextCurrency: Currency) => {
+    setCurrency(nextCurrency);
+    if (me) {
+      void persistUserPreferencePatch({ preferred_currency: nextCurrency });
+    }
   };
 
   useEffect(() => {
@@ -127,14 +152,12 @@ export default function Navbar() {
       if (cancelled) return;
       if (!token) {
         setMe(null);
-        setMyAgency(null);
-        setStoredAvatarUrl(null);
         setAvatarBroken(false);
         setProfileOpen(false);
       }
     };
 
-    const checkAuth = async () => {
+    const checkAuth = async (force = false) => {
       const token = getStoredToken();
       syncFromToken(token);
       if (!token) {
@@ -142,51 +165,44 @@ export default function Navbar() {
         return;
       }
 
-      if (!cancelled) setAuthReady(true);
-
       try {
-        const nextMe = await api.auth.me();
+        const nextMe = await loadCurrentUser(force);
         if (cancelled) return;
         setMe(nextMe);
-        if (nextMe.preferred_language && nextMe.preferred_language !== language) {
-          setLanguage(nextMe.preferred_language);
-        }
-        if (nextMe.preferred_currency && nextMe.preferred_currency !== currency) {
-          setCurrency(nextMe.preferred_currency);
-        }
-
-        if (nextMe.role === "agency" && typeof nextMe.agency_id === "number") {
-          try {
-            const agency = await api.agencies.getOne(nextMe.agency_id);
-            if (cancelled) return;
-            setMyAgency(agency);
-          } catch {
-            if (cancelled) return;
-            setMyAgency(null);
-          }
-        } else {
-          setMyAgency(null);
+        if (!nextMe) {
+          setAvatarBroken(false);
+          setProfileOpen(false);
+          return;
         }
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "";
         if (isAuthErrorMessage(message)) {
-          clearSessionToken();
+          await clearSessionToken();
           syncFromToken(null);
         }
+      } finally {
+        if (!cancelled) setAuthReady(true);
       }
     };
 
     void checkAuth();
+    const onStorage = () => void checkAuth();
     const onAuthChange = () => void checkAuth();
-    window.addEventListener("storage", onAuthChange);
+    const onUserUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ force?: boolean }>).detail;
+      void checkAuth(detail?.force === true);
+    };
+    window.addEventListener("storage", onStorage);
     window.addEventListener("tourpie:auth", onAuthChange as EventListener);
+    window.addEventListener("tourpie:user-updated", onUserUpdated as EventListener);
     return () => {
       cancelled = true;
-      window.removeEventListener("storage", onAuthChange);
+      window.removeEventListener("storage", onStorage);
       window.removeEventListener("tourpie:auth", onAuthChange as EventListener);
+      window.removeEventListener("tourpie:user-updated", onUserUpdated as EventListener);
     };
-  }, [currency, language, setCurrency, setLanguage]);
+  }, [setCurrency, setLanguage]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -208,7 +224,7 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     const roleValue = getRoleFromToken();
     try {
       localStorage.setItem(SESSION_LOGOUT_KEY, JSON.stringify({ at: Date.now(), reason: "manual", role: roleValue }));
@@ -216,7 +232,7 @@ export default function Navbar() {
     try {
       localStorage.removeItem("admin_preview_backup_token");
     } catch {}
-    clearSessionToken();
+    await clearSessionToken();
     setAuthReady(true);
     setProfileOpen(false);
     setPrefsOpen(false);
@@ -230,6 +246,7 @@ export default function Navbar() {
   const homeHref = effectiveRole === "admin" ? "/admin" : effectiveRole === "agency" ? "/agency" : "/dashboard";
   const settingsHref =
     effectiveRole === "admin" ? "/admin/settings" : effectiveRole === "agency" ? "/agency/settings" : "/dashboard/settings";
+  const notificationsHref = effectiveRole === "user" ? "/dashboard/notifications" : null;
 
   const roleText = t(effectiveRole === "agency" ? "role_agency" : effectiveRole === "admin" ? "role_admin" : "role_user");
   const rolePillClass =
@@ -239,12 +256,7 @@ export default function Navbar() {
         ? "bg-purple-50 text-purple-700 border-purple-100"
         : "bg-blue-50 text-blue-700 border-blue-100";
 
-  const identityName =
-    effectiveRole === "admin"
-      ? me?.full_name || me?.email || roleText
-      : effectiveRole === "agency"
-        ? myAgency?.name || me?.full_name || me?.email || roleText
-        : me?.full_name || me?.email || roleText;
+  const identityName = me?.full_name || me?.email || roleText;
   const emailStatusVerified = !!me?.is_email_verified && !me?.pending_email;
   const emailStatusLabel = emailStatusVerified ? t("account_verified") : t("account_verify_email");
   const emailStatusClass = emailStatusVerified
@@ -257,26 +269,11 @@ export default function Navbar() {
       : typeof me?.id === "number"
         ? `tourpie:avatar:user:${me.id}`
         : null;
-  const avatarUrl = me?.avatar_url ? me.avatar_url : storedAvatarUrl;
+  const avatarUrl = me?.avatar_url || null;
 
   useEffect(() => {
-    if (me?.avatar_url) {
-      window.setTimeout(() => setAvatarBroken(false), 0);
-      return;
-    }
-    if (!avatarStorageKey) return;
-    const id = window.setTimeout(() => {
-      try {
-        const stored = localStorage.getItem(avatarStorageKey);
-        setStoredAvatarUrl(stored ? stored : null);
-        setAvatarBroken(false);
-      } catch {
-        setStoredAvatarUrl(null);
-        setAvatarBroken(false);
-      }
-    }, 0);
-    return () => window.clearTimeout(id);
-  }, [avatarStorageKey, me?.avatar_url]);
+    window.setTimeout(() => setAvatarBroken(false), 0);
+  }, [avatarUrl]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -333,7 +330,7 @@ export default function Navbar() {
       }
     };
 
-    const logoutAndRedirect = (payload: { reason: "inactivity" | "manual" | "auth"; broadcast: boolean }) => {
+    const logoutAndRedirect = async (payload: { reason: "inactivity" | "manual" | "auth"; broadcast: boolean }) => {
       const roleValue = getRoleFromToken();
       if (payload.reason !== "manual") setExpiredNotice();
       if (payload.broadcast) {
@@ -344,7 +341,7 @@ export default function Navbar() {
           );
         } catch {}
       }
-      clearSessionToken();
+      await clearSessionToken({ emitEvent: false });
       setSessionWarningOpen(false);
       clearTimers();
       const href = roleValue === "admin" ? "/admin/login" : "/login";
@@ -365,12 +362,12 @@ export default function Navbar() {
       clearTimers();
 
       if (logoutAt <= now) {
-        logoutAndRedirect({ reason: "inactivity", broadcast: true });
+        void logoutAndRedirect({ reason: "inactivity", broadcast: true });
         return;
       }
 
       logoutTimeoutRef.current = window.setTimeout(
-        () => logoutAndRedirect({ reason: "inactivity", broadcast: true }),
+        () => void logoutAndRedirect({ reason: "inactivity", broadcast: true }),
         logoutAt - now
       );
 
@@ -426,6 +423,7 @@ export default function Navbar() {
     const onStorage = (e: StorageEvent) => {
       if (!e.key) return;
       if (e.key === SESSION_LOGOUT_KEY) {
+        void (async () => {
         const raw = e.newValue;
         if (!raw) return;
         if (lastLogoutSeenRef.current === raw) return;
@@ -447,11 +445,12 @@ export default function Navbar() {
             localStorage.setItem(SESSION_EXPIRED_KEY, JSON.stringify({ at: Date.now(), reason }));
           } catch {}
         }
-        clearSessionToken();
+        await clearSessionToken({ emitEvent: false });
         setSessionWarningOpen(false);
         clearTimers();
         const href = role === "admin" ? "/admin/login" : "/login";
         router.replace(reason === "manual" ? href : `${href}?reason=session_expired`);
+        })();
         return;
       }
       if (e.key === SESSION_ACTIVITY_KEY) {
@@ -472,6 +471,7 @@ export default function Navbar() {
     window.addEventListener("tourpie:activity", onActivityEvent as EventListener);
     window.addEventListener("storage", onStorage);
     const onLogoutEvent = (e: Event) => {
+      void (async () => {
       let reason: "inactivity" | "manual" | "auth" = "auth";
       let role: string | null = null;
       const ce = e as CustomEvent<{ reason?: string; role?: string }>;
@@ -484,11 +484,12 @@ export default function Navbar() {
           localStorage.setItem(SESSION_EXPIRED_KEY, JSON.stringify({ at: Date.now(), reason }));
         } catch {}
       }
-      clearSessionToken();
+      await clearSessionToken({ emitEvent: false });
       setSessionWarningOpen(false);
       clearTimers();
       const href = role === "admin" ? "/admin/login" : "/login";
       router.replace(reason === "manual" ? href : `${href}?reason=session_expired`);
+      })();
     };
     window.addEventListener("tourpie:logout", onLogoutEvent as EventListener);
 
@@ -517,13 +518,13 @@ export default function Navbar() {
       if (!token) return;
       const refreshed = await api.auth.refresh();
       if (refreshed?.access_token) {
-        setSessionToken(refreshed.access_token);
+        await setSessionToken(refreshed.access_token);
       }
       touchSessionActivity("refresh");
       setSessionWarningOpen(false);
     } catch {
       setSessionWarningOpen(false);
-      clearSessionToken();
+      await clearSessionToken();
       router.replace(effectiveRole === "admin" ? "/admin/login?reason=session_expired" : "/login?reason=session_expired");
     }
   };
@@ -549,7 +550,7 @@ export default function Navbar() {
   };
 
   const uploadAvatar = async (file: File) => {
-    if (!avatarStorageKey || !me) return;
+    if (!me) return;
     const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"]);
     const maxSize = 2 * 1024 * 1024;
     const ext = file.name.split(".").pop()?.toLowerCase() || "";
@@ -565,27 +566,21 @@ export default function Navbar() {
     });
     if (!dataUrl.startsWith("data:image/")) return;
     try {
-      await api.auth.updateProfile({ avatar_url: dataUrl });
-      window.dispatchEvent(new Event("tourpie:user-updated"));
+      const updated = await api.auth.updateProfile({ avatar_url: dataUrl });
+      syncCurrentUserProfile(updated);
     } catch {
-      try {
-        localStorage.setItem(avatarStorageKey, dataUrl);
-      } catch {}
+      return;
     }
-    setStoredAvatarUrl(dataUrl);
     setAvatarBroken(false);
   };
 
   const clearAvatar = () => {
-    if (!avatarStorageKey) return;
-    try {
-      localStorage.removeItem(avatarStorageKey);
-    } catch {}
     void api.auth
       .updateProfile({ avatar_url: null })
-      .then(() => window.dispatchEvent(new Event("tourpie:user-updated")))
-      .catch(() => undefined);
-    setStoredAvatarUrl(null);
+      .then((updated) => syncCurrentUserProfile(updated))
+      .catch(() => {
+        requestCurrentUserRefresh();
+      });
     setAvatarBroken(false);
   };
 
@@ -698,7 +693,7 @@ export default function Navbar() {
                         key={opt.value}
                         type="button"
                         onClick={() => {
-                          setLanguage(opt.value);
+                          handleLanguageChange(opt.value);
                           setPrefsOpen(false);
                         }}
                         className={`w-full px-3 py-3 rounded-2xl text-sm font-black text-left transition flex items-center justify-between gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
@@ -720,7 +715,7 @@ export default function Navbar() {
                         key={c}
                         type="button"
                         onClick={() => {
-                          setCurrency(c);
+                          handleCurrencyChange(c);
                           setPrefsOpen(false);
                         }}
                         className={`px-3 py-2 rounded-xl text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
@@ -831,6 +826,16 @@ export default function Navbar() {
                           >
                             {t("dash_settings")}
                           </Link>
+                          {notificationsHref ? (
+                            <Link
+                              href={notificationsHref}
+                              prefetch={false}
+                              onClick={() => setProfileOpen(false)}
+                              className="block px-4 py-3 rounded-xl font-black text-sm text-gray-900 hover:bg-blue-50 hover:text-blue-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                            >
+                              {t("dash_notifications")}
+                            </Link>
+                          ) : null}
                           {!emailStatusVerified ? (
                             <Link
                               href={settingsHref}
@@ -863,7 +868,7 @@ export default function Navbar() {
                           </button>
                           <div className="h-px bg-gray-100 my-2" />
                           <button
-                            onClick={handleLogout}
+                            onClick={() => void handleLogout()}
                             className="w-full text-left px-4 py-3 rounded-xl font-black text-sm text-gray-700 hover:bg-gray-100 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                           >
                             {t("nav_logout")}
@@ -989,7 +994,7 @@ export default function Navbar() {
                           key={lang.value}
                           type="button"
                           onClick={() => {
-                            setLanguage(lang.value);
+                            handleLanguageChange(lang.value);
                             setMobilePrefsOpen(false);
                           }}
                           className={`w-full px-3 py-3 rounded-2xl text-sm font-black transition flex items-center justify-between gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
@@ -1011,7 +1016,7 @@ export default function Navbar() {
                           key={c}
                           type="button"
                           onClick={() => {
-                            setCurrency(c);
+                          handleCurrencyChange(c);
                             setMobilePrefsOpen(false);
                           }}
                           className={`px-2 py-2 rounded-xl text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
@@ -1123,6 +1128,19 @@ export default function Navbar() {
                       >
                         {t("dash_settings")}
                       </Link>
+                      {notificationsHref ? (
+                        <Link
+                          href={notificationsHref}
+                          prefetch={false}
+                          onClick={() => {
+                            setProfileOpen(false);
+                            setIsOpen(false);
+                          }}
+                          className="block px-4 py-3 rounded-xl font-black text-sm text-gray-900 hover:bg-blue-50 hover:text-blue-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        >
+                          {t("dash_notifications")}
+                        </Link>
+                      ) : null}
                       {!emailStatusVerified ? (
                         <Link
                           href={settingsHref}
@@ -1212,12 +1230,14 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={() => {
-                  try {
-                    localStorage.setItem(SESSION_LOGOUT_KEY, JSON.stringify({ at: Date.now(), reason: "manual", role: getRoleFromToken() }));
-                  } catch {}
-                  clearSessionToken();
-                  setSessionWarningOpen(false);
-                  window.location.href = effectiveRole === "admin" ? "/admin/login" : "/login";
+                  void (async () => {
+                    try {
+                      localStorage.setItem(SESSION_LOGOUT_KEY, JSON.stringify({ at: Date.now(), reason: "manual", role: getRoleFromToken() }));
+                    } catch {}
+                    await clearSessionToken();
+                    setSessionWarningOpen(false);
+                    window.location.href = effectiveRole === "admin" ? "/admin/login" : "/login";
+                  })();
                 }}
                 className="flex-1 bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black py-3 rounded-2xl transition"
               >

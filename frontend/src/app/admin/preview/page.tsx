@@ -50,7 +50,7 @@ export default function AdminPreviewPage() {
       try {
         const res = await api.auth.adminImpersonate({ role });
         if (res?.access_token) {
-          setSessionToken(res.access_token);
+          await setSessionToken(res.access_token);
           router.replace(role === "agency" ? "/agency" : "/dashboard");
           return;
         }

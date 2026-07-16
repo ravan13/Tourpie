@@ -23,7 +23,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         try {
           const me = await api.auth.me();
           if (me?.role !== "admin") {
-            clearSessionToken();
+            await clearSessionToken();
             router.replace("/admin/login");
             return;
           }
@@ -38,7 +38,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             });
             markSessionExpired("auth");
             broadcastLogout("auth");
-            clearSessionToken();
+            await clearSessionToken();
             router.replace("/admin/login?reason=session_expired");
             return;
           }

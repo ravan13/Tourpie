@@ -4,8 +4,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api, CommunityComment, CommunityPost, getStoredToken, User } from "@/lib/api";
+import { api, CommunityComment, CommunityPost, getStoredToken } from "@/lib/api";
 import { useLanguage } from "@/context/LanguageContext";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 export default function CommunityPostPage() {
   const { t } = useLanguage();
@@ -16,7 +17,7 @@ export default function CommunityPostPage() {
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [params]);
 
-  const [me, setMe] = useState<User | null>(null);
+  const { user: me } = useCurrentUser();
   const [loading, setLoading] = useState(true);
   const [post, setPost] = useState<CommunityPost | null>(null);
   const [commentsLoading, setCommentsLoading] = useState(false);
@@ -32,24 +33,6 @@ export default function CommunityPostPage() {
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportSaving, setReportSaving] = useState(false);
-
-  useEffect(() => {
-    const token = getStoredToken();
-    if (!token) {
-      return;
-    }
-    const id = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const next = await api.auth.me();
-          setMe(next);
-        } catch {
-          setMe(null);
-        }
-      })();
-    }, 0);
-    return () => window.clearTimeout(id);
-  }, []);
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -100,6 +83,25 @@ export default function CommunityPostPage() {
     return me.role === "admin" || me.id === userId;
   };
 
+  const getDisplayIdentity = (
+    userId: number,
+    user?: { id: number; full_name?: string | null; avatar_url?: string | null } | null
+  ) => {
+    const resolved =
+      me && me.id === userId
+        ? {
+            id: me.id,
+            full_name: me.full_name || user?.full_name || null,
+            avatar_url: me.avatar_url ?? user?.avatar_url ?? null,
+          }
+        : user || null;
+    const name = resolved?.full_name || t("community_member");
+    return {
+      name,
+      avatarUrl: resolved?.avatar_url || null,
+    };
+  };
+
   const submitComment = async () => {
     if (!postId) return;
     if (!getStoredToken()) return requireLogin();
@@ -114,6 +116,7 @@ export default function CommunityPostPage() {
   };
 
   const shareUrl = typeof window !== "undefined" ? window.location.href : "";
+  const postIdentity = post ? getDisplayIdentity(post.user_id, post.user) : null;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
@@ -172,8 +175,15 @@ export default function CommunityPostPage() {
                 <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
                 <div className="absolute bottom-8 left-8 right-8 text-white">
                   <div className="text-3xl md:text-4xl font-black tracking-tight drop-shadow">{post.title}</div>
-                  <div className="mt-3 text-white/85 font-bold flex flex-wrap gap-x-3 gap-y-1">
-                    <span>{post.user?.full_name || t("community_member")}</span>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-white/85 font-bold">
+                    {postIdentity?.avatarUrl ? (
+                      <Image src={postIdentity.avatarUrl} alt={postIdentity.name} width={36} height={36} className="w-9 h-9 rounded-2xl object-cover border border-white/20" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-2xl bg-white/15 border border-white/20 text-white flex items-center justify-center font-black">
+                        {postIdentity?.name.charAt(0)}
+                      </div>
+                    )}
+                    <span>{postIdentity?.name || t("community_member")}</span>
                     <span className="text-white/40">•</span>
                     <span>#{post.id}</span>
                     {me && (me.role === "admin" || me.id === post.user_id) && (post.status || "approved") !== "approved" ? (
@@ -190,8 +200,15 @@ export default function CommunityPostPage() {
             ) : (
               <div className="p-8">
                 <div className="text-3xl md:text-4xl font-black text-gray-900 tracking-tight">{post.title}</div>
-                <div className="mt-3 text-sm text-gray-500 font-bold flex flex-wrap gap-x-3 gap-y-1">
-                  <span>{post.user?.full_name || t("community_member")}</span>
+                <div className="mt-3 text-sm text-gray-500 font-bold flex flex-wrap items-center gap-x-3 gap-y-2">
+                  {postIdentity?.avatarUrl ? (
+                    <Image src={postIdentity.avatarUrl} alt={postIdentity.name} width={36} height={36} className="w-9 h-9 rounded-2xl object-cover" />
+                  ) : (
+                    <div className="w-9 h-9 rounded-2xl bg-gray-900 text-white flex items-center justify-center font-black">
+                      {postIdentity?.name.charAt(0)}
+                    </div>
+                  )}
+                  <span>{postIdentity?.name || t("community_member")}</span>
                   <span className="text-gray-300">•</span>
                   <span>#{post.id}</span>
                   {me && (me.role === "admin" || me.id === post.user_id) && (post.status || "approved") !== "approved" ? (
@@ -322,8 +339,24 @@ export default function CommunityPostPage() {
               ) : (
                 comments.map((c) => (
                   <div key={c.id} className="rounded-[2rem] border border-gray-100 bg-gray-50 p-6">
-                    <div className="font-black text-gray-900">{c.user?.full_name || t("community_member")}</div>
-                    <div className="mt-3 text-gray-700 font-medium whitespace-pre-wrap">{c.body}</div>
+                    {(() => {
+                      const identity = getDisplayIdentity(c.user_id, c.user);
+                      return (
+                        <div className="flex items-start gap-3">
+                          {identity.avatarUrl ? (
+                            <Image src={identity.avatarUrl} alt={identity.name} width={44} height={44} className="w-11 h-11 rounded-2xl object-cover" />
+                          ) : (
+                            <div className="w-11 h-11 rounded-2xl bg-gray-900 text-white flex items-center justify-center font-black shrink-0">
+                              {identity.name.charAt(0)}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="font-black text-gray-900">{identity.name}</div>
+                            <div className="mt-3 text-gray-700 font-medium whitespace-pre-wrap">{c.body}</div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {canEdit(c.user_id) ? (
                       <div className="mt-4 flex gap-2">
                         <button

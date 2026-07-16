@@ -1,6 +1,6 @@
 "use client";
 
-import { api, setSessionToken } from "@/lib/api";
+import { api, requestCurrentUserRefresh, setSessionToken } from "@/lib/api";
 import { useLanguage } from "@/context/LanguageContext";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -37,8 +37,8 @@ export default function EmailActionPage() {
         }
         if (mode === "confirm-email-change") {
           const auth = await api.auth.confirmEmailChange(token);
-          setSessionToken(auth.access_token);
-          window.dispatchEvent(new Event("tourpie:user-updated"));
+          await setSessionToken(auth.access_token);
+          requestCurrentUserRefresh();
           if (!cancelled) {
             setState("success");
             setMessage(t("account_email_updated_success"));

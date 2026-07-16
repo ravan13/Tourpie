@@ -9,12 +9,26 @@ from pathlib import Path
 from .. import models, schemas, database, auth
 import logging
 import os
+import secrets
 
 router = APIRouter()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
 
 OTP_EXPIRE_MINUTES = int(os.getenv("OTP_EXPIRE_MINUTES", "5"))
+EMAIL_VERIFICATION_LINK_EXPIRE_HOURS = int(os.getenv("EMAIL_VERIFICATION_LINK_EXPIRE_HOURS", "24"))
+
+def _frontend_base_url() -> str:
+    return (os.getenv("FRONTEND_BASE_URL") or os.getenv("NEXT_PUBLIC_SITE_URL") or "http://127.0.0.1:3000").strip().rstrip("/")
+
+def _build_frontend_url(path: str, params: dict[str, str]) -> str:
+    from urllib.parse import urlencode
+
+    query = urlencode(params)
+    return f"{_frontend_base_url()}{path}{f'?{query}' if query else ''}"
+
+def _generate_email_link_token() -> str:
+    return secrets.token_urlsafe(32)
 
 def _record_delivery(
     db: Session,
@@ -146,8 +160,10 @@ def apply_as_agency(
     hashed_password = auth.get_password_hash(password)
     now = datetime.now(timezone.utc)
     email_code = auth.generate_otp_code(6)
+    email_link_token = _generate_email_link_token()
     phone_code = auth.generate_otp_code(6)
     expires_minutes = max(1, OTP_EXPIRE_MINUTES)
+    verification_link_expires_at = now + timedelta(hours=max(1, EMAIL_VERIFICATION_LINK_EXPIRE_HOURS))
     new_user = models.User(
         email=email,
         full_name=agency_name,
@@ -162,6 +178,8 @@ def apply_as_agency(
         verification_code=None,
         verification_code_hash=auth.get_password_hash(email_code),
         verification_expires_at=now + timedelta(minutes=expires_minutes),
+        email_verification_token_hash=auth.get_password_hash(email_link_token),
+        email_verification_token_expires_at=verification_link_expires_at,
         verification_sent_at=now,
         verification_rate_window_start=now,
         verification_rate_count=1,
@@ -177,18 +195,19 @@ def apply_as_agency(
     lang = (language or "").strip().lower()
     if lang not in ("en", "ru", "az", "tr"):
         lang = "en"
+    verify_link = _build_frontend_url("/auth/email-action", {"mode": "verify-email", "token": email_link_token})
     if lang == "ru":
         subject = "Подтверждение email — TourPie"
-        body_text = f"Ваш код подтверждения: {email_code}\nСрок действия: {expires_minutes} мин."
+        body_text = f"Ваш код подтверждения: {email_code}\nСрок действия кода: {expires_minutes} мин.\nПодтвердить instantly: {verify_link}"
     elif lang == "az":
         subject = "Email təsdiqi — TourPie"
-        body_text = f"Təsdiq kodunuz: {email_code}\nEtibarlılıq müddəti: {expires_minutes} dəq."
+        body_text = f"Təsdiq kodunuz: {email_code}\nKodun etibarlılıq müddəti: {expires_minutes} dəq.\nDərhal təsdiqlə: {verify_link}"
     elif lang == "tr":
         subject = "E‑posta doğrulama — TourPie"
-        body_text = f"Doğrulama kodunuz: {email_code}\nGeçerlilik süresi: {expires_minutes} dk."
+        body_text = f"Doğrulama kodunuz: {email_code}\nKodun geçerlilik süresi: {expires_minutes} dk.\nHemen doğrula: {verify_link}"
     else:
         subject = "Verify your email — TourPie"
-        body_text = f"Your verification code: {email_code}\nExpires in: {expires_minutes} minutes."
+        body_text = f"Your verification code: {email_code}\nCode expires in: {expires_minutes} minutes.\nVerify instantly: {verify_link}"
     try:
         meta = auth.send_email_with_meta(email, subject, body_text)
         _record_delivery(db, new_user.id, "email", "register_verify_email", email, "sent", meta.get("provider"))

@@ -37,7 +37,7 @@ export function middleware(req: NextRequest) {
   const agencyStatus = typeof payload?.agency_status === "string" ? (payload.agency_status as string) : null;
 
   if (pathname === "/login") {
-    if (role === "admin" || role === "agency") {
+    if (role === "admin" || role === "agency" || role === "user") {
       return NextResponse.redirect(new URL(roleHome(role), req.url));
     }
     return NextResponse.next();
@@ -58,7 +58,7 @@ export function middleware(req: NextRequest) {
   }
 
   if (pathname.startsWith("/admin")) {
-    if (!token) return NextResponse.next();
+    if (!token) return NextResponse.redirect(new URL("/admin/login", req.url));
     if (!role) return NextResponse.redirect(new URL("/admin/login", req.url));
     if (role !== "admin") return NextResponse.redirect(new URL(roleHome(role), req.url));
     return NextResponse.next();
@@ -83,7 +83,7 @@ export function middleware(req: NextRequest) {
   }
 
   if (pathname.startsWith("/dashboard")) {
-    if (!token) return NextResponse.next();
+    if (!token) return NextResponse.redirect(new URL("/login", req.url));
     if (!role) return NextResponse.redirect(new URL("/login", req.url));
     if (role !== "user") return NextResponse.redirect(new URL(roleHome(role), req.url));
     return NextResponse.next();

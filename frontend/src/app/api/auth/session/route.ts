@@ -9,15 +9,16 @@ function isSecureRequest(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const data = (await req.json().catch(() => null)) as { token?: unknown; maxAgeSeconds?: unknown } | null;
+  const data = (await req.json().catch(() => null)) as { token?: unknown; maxAgeSeconds?: unknown; sessionOnly?: unknown } | null;
   const token = typeof data?.token === "string" ? data.token.trim() : "";
   if (!token) return NextResponse.json({ detail: "Token is required" }, { status: 400 });
 
   const maxAgeSecondsRaw = data?.maxAgeSeconds;
+  const sessionOnly = data?.sessionOnly === true;
   const maxAgeSeconds =
-    typeof maxAgeSecondsRaw === "number" && Number.isFinite(maxAgeSecondsRaw) && maxAgeSecondsRaw > 0
+    !sessionOnly && typeof maxAgeSecondsRaw === "number" && Number.isFinite(maxAgeSecondsRaw) && maxAgeSecondsRaw > 0
       ? Math.floor(maxAgeSecondsRaw)
-      : 60 * 60 * 24 * 30;
+      : undefined;
 
   const res = NextResponse.json({ ok: true });
   res.cookies.set({
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     sameSite: "lax",
     secure: isSecureRequest(req),
     path: "/",
-    maxAge: maxAgeSeconds,
+    ...(typeof maxAgeSeconds === "number" ? { maxAge: maxAgeSeconds } : {}),
   });
   return res;
 }
@@ -45,4 +46,3 @@ export async function DELETE(req: NextRequest) {
   });
   return res;
 }
-

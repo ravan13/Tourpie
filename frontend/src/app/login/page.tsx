@@ -4,7 +4,8 @@ import AuthForms from "@/components/AuthForms";
 import Logo from "@/components/Logo";
 import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
-import { api, clearSessionToken, getStoredTokenPayload, getStoredToken, isAuthErrorMessage, SESSION_EXPIRED_KEY } from "@/lib/api";
+import { clearSessionToken, getStoredToken, SESSION_EXPIRED_KEY } from "@/lib/api";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -14,6 +15,7 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const [ready, setReady] = useState(false);
   const [expiredNotice, setExpiredNotice] = useState<string | null>(null);
+  const { authReady, user } = useCurrentUser();
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -34,15 +36,21 @@ export default function LoginPage() {
   }, [searchParams, t]);
 
   useEffect(() => {
+    let cancelled = false;
+
     void (async () => {
+      if (!authReady) return;
+
       const token = getStoredToken();
-      if (!token) {
-        setReady(true);
+      if (!user) {
+        if (token) {
+          await clearSessionToken();
+        }
+        if (!cancelled) setReady(true);
         return;
       }
 
-      const decoded = getStoredTokenPayload();
-      const role = typeof decoded?.role === "string" ? decoded.role : null;
+      const role = typeof user.role === "string" ? user.role : null;
       if (role === "admin") {
         router.replace("/admin");
         return;
@@ -51,22 +59,30 @@ export default function LoginPage() {
         router.replace("/agency");
         return;
       }
-      try {
-        const me = await api.auth.me();
-        if (me?.onboarding_completed === false) {
-          setReady(true);
-          return;
-        }
-        router.replace("/dashboard");
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (isAuthErrorMessage(message)) {
-          clearSessionToken();
-        }
-        setReady(true);
+      if (user.onboarding_completed === false) {
+        if (!cancelled) setReady(true);
+        return;
       }
+      if (!token) {
+        await clearSessionToken();
+        if (!cancelled) setReady(true);
+        return;
+      }
+      router.replace("/dashboard");
     })();
-  }, [router]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, router, user]);
+
+  if (!authReady && !ready) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="text-sm font-bold text-gray-500">{t("common_loading")}</div>
+      </div>
+    );
+  }
 
   if (!ready) {
     return (

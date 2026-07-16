@@ -1,20 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, broadcastLogout, clearSessionToken, getStoredToken, isAuthErrorMessage, markSessionExpired, User } from "@/lib/api";
+import { broadcastLogout, clearSessionToken, getStoredToken, markSessionExpired } from "@/lib/api";
 import { useLanguage } from "@/context/LanguageContext";
 import DashboardShell from "@/components/DashboardShell";
 import { userNav } from "@/lib/dashboardNav";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 export default function DashboardPage() {
   const router = useRouter();
   const { t } = useLanguage();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const nav = useMemo(() => userNav(t), [t]);
+  const { user, authReady } = useCurrentUser();
 
   useEffect(() => {
     const token = getStoredToken();
@@ -23,37 +22,33 @@ export default function DashboardPage() {
       return;
     }
 
-    const run = async () => {
-      try {
-        const me = await api.auth.me();
-        if (!me.is_verified) {
-          router.push("/login");
-          return;
-        }
-        if (!me.onboarding_completed) {
-          router.replace("/login");
-          return;
-        }
-        setUser(me);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : "";
-        if (isAuthErrorMessage(message)) {
-          markSessionExpired("auth");
-          broadcastLogout("auth");
-          clearSessionToken();
-          router.replace("/login?reason=session_expired");
-          return;
-        }
-        setError(t("auth_error"));
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (!authReady) return;
+    if (!user) {
+      return;
+    }
+    if (!user.is_verified) {
+      router.push("/login");
+      return;
+    }
+    if (!user.onboarding_completed) {
+      router.replace("/login");
+      return;
+    }
+  }, [authReady, router, user]);
 
-    void run();
-  }, [router, t]);
+  useEffect(() => {
+    if (!authReady || user) return;
+    const token = getStoredToken();
+    if (!token) return;
+    void (async () => {
+      markSessionExpired("auth");
+      broadcastLogout("auth");
+      await clearSessionToken();
+      router.replace("/login?reason=session_expired");
+    })();
+  }, [authReady, router, user]);
 
-  if (loading) {
+  if (!authReady) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-16 text-center">
         <p className="text-gray-500 font-medium animate-pulse">{t("common_loading")}</p>
@@ -61,11 +56,11 @@ export default function DashboardPage() {
     );
   }
 
-  if (error || !user) {
+  if (!user) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-16 text-center">
         <p className="text-gray-900 font-bold text-xl mb-3">{t("auth_error")}</p>
-        <p className="text-gray-500 font-medium mb-8">{error ? t("common_try_again") : t("session_expired_message")}</p>
+        <p className="text-gray-500 font-medium mb-8">{t("session_expired_message")}</p>
         <Link href="/login" className="inline-flex bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-2xl">
           {t("auth_login")}
         </Link>

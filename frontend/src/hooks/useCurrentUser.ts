@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, clearSessionToken, getStoredToken, isAuthErrorMessage, User } from "@/lib/api";
+import { getStoredToken, loadCurrentUser, User } from "@/lib/api";
 
 export function useCurrentUser() {
   const [authReady, setAuthReady] = useState(false);
@@ -10,7 +10,7 @@ export function useCurrentUser() {
   useEffect(() => {
     let cancelled = false;
 
-    const load = async () => {
+    const load = async (force = false) => {
       const token = getStoredToken();
       if (!token) {
         if (!cancelled) {
@@ -19,32 +19,32 @@ export function useCurrentUser() {
         }
         return;
       }
-
-      if (!cancelled) setAuthReady(true);
-
       try {
-        const nextUser = await api.auth.me();
+        const nextUser = await loadCurrentUser(force);
         if (!cancelled) setUser(nextUser);
-      } catch (error) {
+      } catch {
         if (cancelled) return;
-        const message = error instanceof Error ? error.message : "";
-        if (isAuthErrorMessage(message)) {
-          clearSessionToken();
-        }
         setUser(null);
+      } finally {
+        if (!cancelled) setAuthReady(true);
       }
     };
 
     void load();
-    const onChange = () => void load();
-    window.addEventListener("storage", onChange);
-    window.addEventListener("tourpie:auth", onChange as EventListener);
-    window.addEventListener("tourpie:user-updated", onChange as EventListener);
+    const onStorage = () => void load();
+    const onAuthChange = () => void load();
+    const onUserUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ force?: boolean }>).detail;
+      void load(detail?.force === true);
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("tourpie:auth", onAuthChange as EventListener);
+    window.addEventListener("tourpie:user-updated", onUserUpdated as EventListener);
     return () => {
       cancelled = true;
-      window.removeEventListener("storage", onChange);
-      window.removeEventListener("tourpie:auth", onChange as EventListener);
-      window.removeEventListener("tourpie:user-updated", onChange as EventListener);
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("tourpie:auth", onAuthChange as EventListener);
+      window.removeEventListener("tourpie:user-updated", onUserUpdated as EventListener);
     };
   }, []);
 

@@ -37,6 +37,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 ACCESS_TOKEN_EXPIRE_ADMIN_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_ADMIN_MINUTES", "15"))
 ACCESS_TOKEN_EXPIRE_AGENCY_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_AGENCY_MINUTES", "30"))
 ACCESS_TOKEN_EXPIRE_USER_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_USER_MINUTES", "60"))
+ACCESS_TOKEN_EXPIRE_REMEMBER_DAYS = int(os.getenv("ACCESS_TOKEN_EXPIRE_REMEMBER_DAYS", "30"))
+ACCESS_TOKEN_EXPIRE_ADMIN_REMEMBER_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_ADMIN_REMEMBER_MINUTES", "1440"))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -199,8 +201,12 @@ def send_sms(to_phone: str, body: str) -> None:
         logging.getLogger(__name__).exception("SMS send failed: %s", str(e))
         raise RuntimeError("SMS service is not configured")
 
-def get_access_token_expire_minutes(role: str | None) -> int:
+def get_access_token_expire_minutes(role: str | None, remember_me: bool = False) -> int:
     r = (role or "").strip().lower()
+    if remember_me:
+        if r == "admin":
+            return max(15, int(ACCESS_TOKEN_EXPIRE_ADMIN_REMEMBER_MINUTES))
+        return max(60, int(ACCESS_TOKEN_EXPIRE_REMEMBER_DAYS) * 24 * 60)
     if r == "admin":
         return max(5, int(ACCESS_TOKEN_EXPIRE_ADMIN_MINUTES))
     if r == "agency":

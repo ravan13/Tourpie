@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { api, setSessionToken } from "@/lib/api";
+import { api, getRememberMePreference, loadCurrentUser, setSessionToken, syncCurrentUserProfile } from "@/lib/api";
 import { useLanguage } from "@/context/LanguageContext";
 import { useRouter } from "next/navigation";
 
@@ -9,7 +9,7 @@ export default function AuthForms() {
   const { t, language } = useLanguage();
   const router = useRouter();
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [step, setStep] = useState<"method" | "email" | "verify" | "forgot" | "reset" | "onboarding">("method");
+  const [step, setStep] = useState<"method" | "email" | "social" | "verify" | "forgot" | "reset" | "onboarding">("method");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -18,6 +18,7 @@ export default function AuthForms() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [country, setCountry] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState<boolean>(() => getRememberMePreference());
   const [verificationCode, setVerificationCode] = useState("");
   const [phoneVerificationCode, setPhoneVerificationCode] = useState("");
   const [emailVerified, setEmailVerified] = useState(false);
@@ -30,6 +31,7 @@ export default function AuthForms() {
   const [resetNewPassword, setResetNewPassword] = useState("");
   const [resetNewPasswordConfirm, setResetNewPasswordConfirm] = useState("");
   const [resetChannel, setResetChannel] = useState<"email" | "phone">("email");
+  const [socialProvider, setSocialProvider] = useState<"google" | "apple" | null>(null);
 
   const [preferredDestinations, setPreferredDestinations] = useState<string[]>([]);
   const [budgetRange, setBudgetRange] = useState<string>("");
@@ -100,6 +102,8 @@ export default function AuthForms() {
     setResetCode("");
     setResetNewPassword("");
     setResetNewPasswordConfirm("");
+    setSocialProvider(null);
+    setRememberMe(getRememberMePreference());
     setPreferredDestinations([]);
     setBudgetRange("");
     setTravelStyle("");
@@ -141,20 +145,17 @@ export default function AuthForms() {
         ? t("auth_phone_verify_needed")
         : t("auth_verify_subtitle", { email });
 
-  const handleSocial = async (provider: "google" | "apple") => {
-    const providerLabel = provider === "google" ? t("auth_google") : t("auth_apple");
-    const entered = prompt(t("auth_social_email_prompt", { provider: providerLabel })) || "";
-    const socialEmail = entered.trim();
-    if (!socialEmail) return;
-
+  const completeSocialLogin = async (provider: "google" | "apple", socialEmail: string) => {
     setLoading(true);
     setMessage(null);
     try {
-      const result = await api.auth.socialLogin({ provider, email: socialEmail });
-      setSessionToken(result.access_token);
+      const result = await api.auth.socialLogin({ provider, email: socialEmail, remember_me: rememberMe });
+      await setSessionToken(result.access_token, { rememberMe });
 
       setEmail(socialEmail);
-      const me = await api.auth.me();
+      const me = await loadCurrentUser();
+      if (me) syncCurrentUserProfile(me);
+      if (!me) throw new Error(t("auth_error"));
       if (!me.onboarding_completed) {
         setStep("onboarding");
         setMessage({ type: "success", text: t("auth_login_success") });
@@ -175,6 +176,22 @@ export default function AuthForms() {
     }
   };
 
+  const handleSocial = (provider: "google" | "apple") => {
+    setSocialProvider(provider);
+    setStep("social");
+    setMessage(null);
+  };
+
+  const handleSocialSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const socialEmail = email.trim();
+    if (!socialProvider || !socialEmail) {
+      setMessage({ type: "error", text: t("auth_email_required") });
+      return;
+    }
+    await completeSocialLogin(socialProvider, socialEmail);
+  };
+
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -184,9 +201,12 @@ export default function AuthForms() {
         const formData = new FormData();
         formData.set("username", email);
         formData.set("password", password);
+        formData.set("remember_me", rememberMe ? "true" : "false");
         const result = await api.auth.login(formData);
-        setSessionToken(result.access_token);
-        const me = await api.auth.me();
+        await setSessionToken(result.access_token, { rememberMe });
+        const me = await loadCurrentUser();
+        if (me) syncCurrentUserProfile(me);
+        if (!me) throw new Error(t("auth_error"));
         if (!me.onboarding_completed) {
           setStep("onboarding");
           setMessage({ type: "success", text: t("auth_login_success") });
@@ -251,9 +271,12 @@ export default function AuthForms() {
     const formData = new FormData();
     formData.set("username", email);
     formData.set("password", password);
+    formData.set("remember_me", rememberMe ? "true" : "false");
     const result = await api.auth.login(formData);
-    setSessionToken(result.access_token);
-    const me = await api.auth.me();
+    await setSessionToken(result.access_token, { rememberMe });
+    const me = await loadCurrentUser();
+    if (me) syncCurrentUserProfile(me);
+    if (!me) throw new Error(t("auth_error"));
     if (!me.onboarding_completed) {
       setStep("onboarding");
       setMessage({ type: "success", text: t("auth_verified_success") });
@@ -429,13 +452,14 @@ export default function AuthForms() {
     setLoading(true);
     setMessage(null);
     try {
-      await api.auth.onboarding({
+      const updated = await api.auth.onboarding({
         preferred_destinations: preferredDestinations,
         budget_range: budgetRange || null,
         travel_style: travelStyle || null,
         interests,
       });
-      router.push("/dashboard");
+      syncCurrentUserProfile(updated);
+      router.replace("/dashboard");
     } catch (error) {
       const text = error instanceof Error ? error.message : t("auth_error");
       setMessage({ type: "error", text });
@@ -603,7 +627,16 @@ export default function AuthForms() {
                 placeholder="••••••••"
               />
               {mode === "login" ? (
-                <div className="mt-3 flex justify-end">
+                <div className="mt-3 flex items-center justify-between gap-4">
+                  <label className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
+                    <input
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    {t("auth_remember_me")}
+                  </label>
                   <button
                     type="button"
                     disabled={loading}
@@ -649,6 +682,73 @@ export default function AuthForms() {
               {t("common_close")}
             </button>
           </div>
+        </>
+      )}
+
+      {step === "social" && socialProvider && (
+        <>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">
+            {socialProvider === "google" ? t("auth_google") : t("auth_apple")}
+          </h2>
+          <p className="text-sm text-gray-500 font-medium text-center mb-6">
+            {t("auth_social_email_prompt", { provider: socialProvider === "google" ? t("auth_google") : t("auth_apple") })}
+          </p>
+
+          <form onSubmit={handleSocialSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">
+                {t("auth_email")}
+              </label>
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+                required
+                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 font-medium text-gray-900 placeholder-gray-400"
+                placeholder={t("auth_email_placeholder")}
+              />
+            </div>
+
+            <label className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
+              <input
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {t("auth_remember_me")}
+            </label>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition duration-200 shadow-lg shadow-blue-100 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {loading ? t("common_please_wait") : socialProvider === "google" ? t("auth_google") : t("auth_apple")}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setStep("method");
+                setSocialProvider(null);
+                setMessage(null);
+              }}
+              className="w-full bg-white border border-gray-200 hover:border-gray-300 text-gray-700 font-bold py-4 rounded-2xl transition duration-200"
+            >
+              {t("auth_back")}
+            </button>
+          </form>
+
+          {message && (
+            <div
+              className={`mt-5 p-4 rounded-xl text-sm font-bold ${
+                message.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+              }`}
+            >
+              {message.text}
+            </div>
+          )}
         </>
       )}
 

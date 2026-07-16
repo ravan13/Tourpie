@@ -5,6 +5,7 @@ from sqlalchemy import func
 from datetime import timedelta
 from .. import models, schemas, database, auth
 from datetime import datetime, timezone, timedelta as td
+import base64
 import json
 import secrets
 from typing import List, Optional
@@ -15,6 +16,8 @@ import os
 router = APIRouter()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
+SUPPORTED_AVATAR_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"}
+MAX_AVATAR_UPLOAD_BYTES = 2 * 1024 * 1024
 
 def _normalize_email(email: str) -> str:
     return (email or "").strip().lower()
@@ -36,6 +39,20 @@ def _sanitize_avatar_url(value: Optional[str]) -> Optional[str]:
     if not raw:
         return None
     if raw.startswith("data:image/"):
+        header, _, encoded = raw.partition(",")
+        if not header or not encoded:
+            raise HTTPException(status_code=400, detail="Invalid avatar image")
+        mime_type = header[5:].split(";", 1)[0].strip().lower()
+        if mime_type not in SUPPORTED_AVATAR_MIME_TYPES:
+            raise HTTPException(status_code=400, detail="Unsupported avatar image type")
+        if ";base64" not in header.lower():
+            raise HTTPException(status_code=400, detail="Invalid avatar image")
+        try:
+            decoded = base64.b64decode(encoded, validate=True)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid avatar image") from exc
+        if len(decoded) > MAX_AVATAR_UPLOAD_BYTES:
+            raise HTTPException(status_code=400, detail="Avatar image is too large")
         return raw
     if raw.startswith("http://") or raw.startswith("https://"):
         return raw
@@ -102,10 +119,11 @@ def _issue_access_token_for_user(
     user: models.User,
     request: Request,
     existing_session_id: Optional[str] = None,
+    remember_me: bool = False,
 ) -> schemas.AuthResponse:
     now = datetime.now(timezone.utc)
     role_value = user.role.value if hasattr(user.role, "value") else user.role
-    expires_delta = timedelta(minutes=auth.get_access_token_expire_minutes(role_value))
+    expires_delta = timedelta(minutes=auth.get_access_token_expire_minutes(role_value, remember_me=remember_me))
     expires_at = now + expires_delta
 
     session: models.UserSession | None = None
@@ -139,7 +157,7 @@ def _issue_access_token_for_user(
     db.commit()
     db.refresh(session)
 
-    token_payload: dict[str, object] = {"sub": user.email, "role": role_value, "sid": session.session_id}
+    token_payload: dict[str, object] = {"sub": user.email, "role": role_value, "sid": session.session_id, "remember_me": remember_me}
     if role_value == "agency":
         latest_app = (
             db.query(models.AgencyApplication)
@@ -201,6 +219,16 @@ def _find_user_by_hashed_token(
 
 OTP_EXPIRE_MINUTES = int(os.getenv("OTP_EXPIRE_MINUTES", "5"))
 OTP_RESEND_COOLDOWN_SECONDS = int(os.getenv("OTP_RESEND_COOLDOWN_SECONDS", "60"))
+EMAIL_VERIFICATION_LINK_EXPIRE_HOURS = int(os.getenv("EMAIL_VERIFICATION_LINK_EXPIRE_HOURS", "24"))
+EMAIL_CHANGE_LINK_EXPIRE_HOURS = int(os.getenv("EMAIL_CHANGE_LINK_EXPIRE_HOURS", "24"))
+
+def _parse_remember_me(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value or "").strip().lower()
+    return text in ("1", "true", "yes", "on")
 
 def _normalize_phone(phone: str) -> str:
     raw = (phone or "").strip()
@@ -271,25 +299,25 @@ def _verification_email(lang: str, code: str, minutes: int, link: str | None = N
         f"Your verification code: {code}\nExpires in: {minutes} minutes.{link_line}\nIf you didn’t create an account, you can ignore this email.",
     )
 
-def _email_change_email(lang: str, new_email: str, link: str, minutes: int) -> tuple[str, str]:
+def _email_change_email(lang: str, new_email: str, link: str, hours: int) -> tuple[str, str]:
     if lang == "ru":
         return (
             "Подтвердите новый email — TourPie",
-            f"Мы получили запрос на смену email для вашего аккаунта TourPie.\nНовый email: {new_email}\nПодтвердить: {link}\nСсылка действует {minutes} мин.",
+            f"Мы получили запрос на смену email для вашего аккаунта TourPie.\nНовый email: {new_email}\nПодтвердить: {link}\nСсылка действует {hours} ч.",
         )
     if lang == "az":
         return (
             "Yeni emaili təsdiqləyin — TourPie",
-            f"TourPie hesabınız üçün email dəyişmə sorğusu aldıq.\nYeni email: {new_email}\nTəsdiq edin: {link}\nKeçid {minutes} dəq etibarlıdır.",
+            f"TourPie hesabınız üçün email dəyişmə sorğusu aldıq.\nYeni email: {new_email}\nTəsdiq edin: {link}\nKeçid {hours} saat etibarlıdır.",
         )
     if lang == "tr":
         return (
             "Yeni e-postayı doğrulayın — TourPie",
-            f"TourPie hesabınız için bir e-posta değişikliği isteği aldık.\nYeni e-posta: {new_email}\nDoğrula: {link}\nBağlantı {minutes} dk geçerlidir.",
+            f"TourPie hesabınız için bir e-posta değişikliği isteği aldık.\nYeni e-posta: {new_email}\nDoğrula: {link}\nBağlantı {hours} saat geçerlidir.",
         )
     return (
         "Confirm your new email — TourPie",
-        f"We received a request to update your TourPie account email.\nNew email: {new_email}\nConfirm here: {link}\nThis link expires in {minutes} minutes.",
+        f"We received a request to update your TourPie account email.\nNew email: {new_email}\nConfirm here: {link}\nThis link expires in {hours} hours.",
     )
 
 def _email_change_notice_old_email(lang: str, new_email: str) -> tuple[str, str]:
@@ -436,6 +464,7 @@ def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
     now = datetime.now(timezone.utc)
     expires_minutes = max(1, OTP_EXPIRE_MINUTES)
     verification_expires_at = now + td(minutes=expires_minutes)
+    verification_link_expires_at = now + td(hours=max(1, EMAIL_VERIFICATION_LINK_EXPIRE_HOURS))
     new_user = models.User(
         email=email,
         full_name=user.full_name,
@@ -447,11 +476,11 @@ def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
         is_email_verified=False,
         is_phone_verified=not bool(phone),
         onboarding_completed=False,
-        verification_code=None,
+        verification_code=email_code if getattr(auth, "AUTH_DEBUG_OTP", False) else None,
         verification_code_hash=auth.get_password_hash(email_code),
         verification_expires_at=verification_expires_at,
         email_verification_token_hash=auth.get_password_hash(email_link_token),
-        email_verification_token_expires_at=verification_expires_at,
+        email_verification_token_expires_at=verification_link_expires_at,
         verification_sent_at=now,
         verification_rate_window_start=now,
         verification_rate_count=1,
@@ -685,7 +714,7 @@ def request_verification(payload: schemas.UserRequestVerification, db: Session =
     email = _normalize_email(str(payload.email))
     db_user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
     if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
+        return {"message": "Verification code sent"}
     if getattr(db_user, "is_email_verified", False):
         return {"message": "Already verified"}
     now = datetime.now(timezone.utc)
@@ -713,11 +742,12 @@ def request_verification(payload: schemas.UserRequestVerification, db: Session =
     code = auth.generate_otp_code(6)
     link_token = _generate_email_link_token()
     expires_minutes = max(1, OTP_EXPIRE_MINUTES)
-    db_user.verification_code = None
+    verification_link_expires_at = now + td(hours=max(1, EMAIL_VERIFICATION_LINK_EXPIRE_HOURS))
+    db_user.verification_code = code if getattr(auth, "AUTH_DEBUG_OTP", False) else None
     db_user.verification_code_hash = auth.get_password_hash(code)
     db_user.verification_expires_at = now + td(minutes=expires_minutes)
     db_user.email_verification_token_hash = auth.get_password_hash(link_token)
-    db_user.email_verification_token_expires_at = now + td(minutes=expires_minutes)
+    db_user.email_verification_token_expires_at = verification_link_expires_at
     db_user.verification_sent_at = now
     db_user.verification_rate_window_start = window_start
     db_user.verification_rate_count = window_count
@@ -1003,10 +1033,10 @@ def request_email_change(
     )
 
     link_token = _generate_email_link_token()
-    expires_minutes = 30
+    expires_hours = max(1, EMAIL_CHANGE_LINK_EXPIRE_HOURS)
     user.pending_email = new_email
     user.email_change_token_hash = auth.get_password_hash(link_token)
-    user.email_change_token_expires_at = now + td(minutes=expires_minutes)
+    user.email_change_token_expires_at = now + td(hours=expires_hours)
     user.email_change_sent_at = now
     user.email_change_rate_window_start = window_start
     user.email_change_rate_count = window_count
@@ -1014,7 +1044,7 @@ def request_email_change(
 
     lang = _normalize_lang(getattr(body, "language", None) or getattr(user, "preferred_language", None))
     confirm_link = _build_frontend_url("/auth/email-action", {"mode": "confirm-email-change", "token": link_token})
-    subject, email_body = _email_change_email(lang, new_email, confirm_link, expires_minutes)
+    subject, email_body = _email_change_email(lang, new_email, confirm_link, expires_hours)
     _send_email_or_raise(db, user.id, "email_change_confirm", new_email, subject, email_body)
     try:
         old_subject, old_body = _email_change_notice_old_email(lang, new_email)
@@ -1055,7 +1085,7 @@ def confirm_email_change(request: Request, token: str = Query(..., min_length=12
         user.is_verified = True
     db.commit()
     db.refresh(user)
-    return _issue_access_token_for_user(db=db, user=user, request=request)
+    return _issue_access_token_for_user(db=db, user=user, request=request, remember_me=True)
 
 @router.post("/onboarding", response_model=schemas.User)
 def onboarding(
@@ -1080,7 +1110,9 @@ def onboarding(
     return db_user
 
 @router.post("/login")
-def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
+    raw_form = await request.form()
+    remember_me = _parse_remember_me(raw_form.get("remember_me"))
     username = _normalize_email(str(form_data.username))
     user = db.query(models.User).filter(func.lower(models.User.email) == username).first()
     if not user or not auth.verify_password(form_data.password, user.hashed_password):
@@ -1112,7 +1144,7 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin 2FA required. Use the admin login page.",
         )
-    return _issue_access_token_for_user(db=db, user=user, request=request)
+    return _issue_access_token_for_user(db=db, user=user, request=request, remember_me=remember_me)
 
 @router.post("/admin/login-start", response_model=schemas.AdminLoginStartResponse)
 def admin_login_start(payload: schemas.AdminLoginStartRequest, db: Session = Depends(database.get_db)):
@@ -1186,7 +1218,7 @@ def admin_verify_2fa(request: Request, payload: schemas.AdminVerify2FARequest, d
     user.auth_provider = user.auth_provider or "email"
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
-    return _issue_access_token_for_user(db=db, user=user, request=request)
+    return _issue_access_token_for_user(db=db, user=user, request=request, remember_me=payload.remember_me)
 
 @router.post("/admin/impersonate", response_model=schemas.AuthResponse)
 def admin_impersonate(
@@ -1402,6 +1434,7 @@ def refresh_access_token(
         user=user,
         request=request,
         existing_session_id=str(payload.get("sid") or "").strip() or None,
+        remember_me=_parse_remember_me(payload.get("remember_me")),
     )
 
 @router.post("/social-login", response_model=schemas.AuthResponse)
@@ -1436,7 +1469,9 @@ def social_login(request: Request, payload: schemas.SocialLoginRequest, db: Sess
         user.is_email_verified = True
         user.is_phone_verified = True
         user.is_verified = True
+        user.email_verification_token_hash = None
+        user.email_verification_token_expires_at = None
     user.auth_provider = provider
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
-    return _issue_access_token_for_user(db=db, user=user, request=request)
+    return _issue_access_token_for_user(db=db, user=user, request=request, remember_me=payload.remember_me)

@@ -28,55 +28,56 @@ export default function DashboardShell({
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    const isProtected =
-      pathname === "/dashboard" ||
-      pathname.startsWith("/dashboard/") ||
-      pathname === "/agency" ||
-      pathname.startsWith("/agency/") ||
-      pathname === "/admin" ||
-      pathname.startsWith("/admin/");
-    if (!isProtected) return;
+    void (async () => {
+      const isProtected =
+        pathname === "/dashboard" ||
+        pathname.startsWith("/dashboard/") ||
+        pathname === "/agency" ||
+        pathname.startsWith("/agency/") ||
+        pathname === "/admin" ||
+        pathname.startsWith("/admin/");
+      if (!isProtected) return;
 
-    const token = getStoredToken();
-    const loginHref = pathname.startsWith("/admin") ? "/admin/login" : "/login";
-    if (!token) {
-      router.replace(loginHref);
-      return;
-    }
+      const token = getStoredToken();
+      const loginHref = pathname.startsWith("/admin") ? "/admin/login" : "/login";
+      if (!token) {
+        router.replace(loginHref);
+        return;
+      }
 
-    const payload = getStoredTokenPayload();
-    const role = typeof payload?.role === "string" ? payload.role.toLowerCase() : null;
-    const expRaw = payload ? (payload as Record<string, unknown>)["exp"] : null;
-    const exp = typeof expRaw === "number" ? expRaw : typeof expRaw === "string" ? Number(expRaw) : null;
-    if (typeof exp === "number" && Number.isFinite(exp) && exp > 0 && Date.now() >= exp * 1000) {
-      markSessionExpired("auth");
-      broadcastLogout("auth");
-      clearSessionToken();
-      router.replace(`${loginHref}?reason=session_expired`);
-      return;
-    }
+      const payload = getStoredTokenPayload();
+      const role = typeof payload?.role === "string" ? payload.role.toLowerCase() : null;
+      const expRaw = payload ? (payload as Record<string, unknown>)["exp"] : null;
+      const exp = typeof expRaw === "number" ? expRaw : typeof expRaw === "string" ? Number(expRaw) : null;
+      if (typeof exp === "number" && Number.isFinite(exp) && exp > 0 && Date.now() >= exp * 1000) {
+        markSessionExpired("auth");
+        broadcastLogout("auth");
+        await clearSessionToken();
+        router.replace(`${loginHref}?reason=session_expired`);
+        return;
+      }
 
-    if (pathname.startsWith("/admin") && role !== "admin") {
-      markSessionExpired("auth");
-      broadcastLogout("auth");
-      clearSessionToken();
-      router.replace("/admin/login");
-      return;
-    }
-    if (pathname.startsWith("/agency") && role !== "agency") {
-      markSessionExpired("auth");
-      broadcastLogout("auth");
-      clearSessionToken();
-      router.replace("/login");
-      return;
-    }
-    if (pathname.startsWith("/dashboard") && role !== "user") {
-      markSessionExpired("auth");
-      broadcastLogout("auth");
-      clearSessionToken();
-      router.replace("/login");
-      return;
-    }
+      if (pathname.startsWith("/admin") && role !== "admin") {
+        markSessionExpired("auth");
+        broadcastLogout("auth");
+        await clearSessionToken();
+        router.replace("/admin/login");
+        return;
+      }
+      if (pathname.startsWith("/agency") && role !== "agency") {
+        markSessionExpired("auth");
+        broadcastLogout("auth");
+        await clearSessionToken();
+        router.replace("/login");
+        return;
+      }
+      if (pathname.startsWith("/dashboard") && role !== "user") {
+        markSessionExpired("auth");
+        broadcastLogout("auth");
+        await clearSessionToken();
+        router.replace("/login");
+      }
+    })();
   }, [pathname, router]);
 
   const activeHref = useMemo(() => {

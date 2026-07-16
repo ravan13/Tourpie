@@ -6,7 +6,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
-import { api, CommunityPost, CommunityPostKind, CommunityComment, getStoredToken, User } from "@/lib/api";
+import { api, CommunityPost, CommunityPostKind, CommunityComment, getStoredToken } from "@/lib/api";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 type CommunityTab = "trending" | "latest" | "qa" | "partners";
 
@@ -25,7 +26,7 @@ export default function CommunityPage() {
   const [reportReason, setReportReason] = useState("");
   const [reportStatus, setReportStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
 
-  const [me, setMe] = useState<User | null>(null);
+  const { user: me } = useCurrentUser();
   const [loading, setLoading] = useState(true);
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const skipRef = useRef(0);
@@ -39,21 +40,6 @@ export default function CommunityPage() {
 
   const [editingPost, setEditingPost] = useState<CommunityPost | null>(null);
   const [editingComment, setEditingComment] = useState<CommunityComment | null>(null);
-
-  useEffect(() => {
-    const token = getStoredToken();
-    if (!token) {
-      return;
-    }
-    void (async () => {
-      try {
-        const next = await api.auth.me();
-        setMe(next);
-      } catch {
-        setMe(null);
-      }
-    })();
-  }, []);
 
   const tags = useMemo(
     () => [
@@ -191,6 +177,25 @@ export default function CommunityPage() {
     return me.role === "admin" || me.id === c.user_id;
   };
 
+  const getDisplayIdentity = (
+    userId: number,
+    user?: { id: number; full_name?: string | null; avatar_url?: string | null } | null
+  ) => {
+    const resolved =
+      me && me.id === userId
+        ? {
+            id: me.id,
+            full_name: me.full_name || user?.full_name || null,
+            avatar_url: me.avatar_url ?? user?.avatar_url ?? null,
+          }
+        : user || null;
+    const name = resolved?.full_name || t("community_member");
+    return {
+      name,
+      avatarUrl: resolved?.avatar_url || null,
+    };
+  };
+
   return (
     <div className="tp-page-shell">
       <div className="relative z-[1] max-w-7xl mx-auto px-4 py-10">
@@ -223,9 +228,15 @@ export default function CommunityPage() {
             <div className="mt-6 border-t border-gray-100 pt-6">
               <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">{t("community_profile_preview")}</div>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black">A</div>
+                {me?.avatar_url ? (
+                  <Image src={me.avatar_url} alt={me.full_name || me.email} width={40} height={40} className="w-10 h-10 rounded-2xl object-cover" />
+                ) : (
+                  <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black">
+                    {(me?.full_name || me?.email || t("community_member")).charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div>
-                  <div className="font-black text-gray-900 leading-tight">{t("community_member")}</div>
+                  <div className="font-black text-gray-900 leading-tight">{me?.full_name || me?.email || t("community_member")}</div>
                   <div className="text-sm text-gray-500 font-medium">{t("community_identity")}</div>
                 </div>
               </div>
@@ -297,157 +308,164 @@ export default function CommunityPage() {
                   {t("common_try_again")}
                 </button>
               </div>
-            ) : posts.map((post) => (
-              <div key={post.id} className="bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden shadow-sm hover:shadow-[0_30px_60px_-20px_rgba(0,0,0,0.15)] transition-all duration-500">
-                {post.image_url ? (
-                  <div className="relative h-64">
-                    <Image src={post.image_url} alt={post.title} fill className="object-cover" sizes="(max-width: 768px) 100vw, 700px" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
-                    <div className="absolute bottom-6 left-6 right-6">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur border border-white/20 text-white text-xs font-black uppercase tracking-widest">
-                          {tagLabel(post.tag || "")}
-                        </div>
-                        {me?.id === post.user_id && post.status && post.status !== "approved" ? (
-                          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/20 backdrop-blur border border-amber-200/30 text-amber-50 text-xs font-black uppercase tracking-widest">
-                            {t(`moderation_status_${post.status}`)}
-                          </div>
-                        ) : null}
-                      </div>
-                      <div className="mt-3 text-2xl font-black text-white drop-shadow">{post.title}</div>
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="p-8">
-                  {!post.image_url && (
-                    <div className="flex items-start justify-between gap-4 mb-4">
-                      <div>
+            ) : posts.map((post) => {
+              const identity = getDisplayIdentity(post.user_id, post.user);
+              return (
+                <div key={post.id} className="bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden shadow-sm hover:shadow-[0_30px_60px_-20px_rgba(0,0,0,0.15)] transition-all duration-500">
+                  {post.image_url ? (
+                    <div className="relative h-64">
+                      <Image src={post.image_url} alt={post.title} fill className="object-cover" sizes="(max-width: 768px) 100vw, 700px" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                      <div className="absolute bottom-6 left-6 right-6">
                         <div className="flex flex-wrap items-center gap-2">
-                          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-black uppercase tracking-widest">
+                          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur border border-white/20 text-white text-xs font-black uppercase tracking-widest">
                             {tagLabel(post.tag || "")}
                           </div>
                           {me?.id === post.user_id && post.status && post.status !== "approved" ? (
-                            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-100 text-amber-700 text-xs font-black uppercase tracking-widest">
+                            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/20 backdrop-blur border border-amber-200/30 text-amber-50 text-xs font-black uppercase tracking-widest">
                               {t(`moderation_status_${post.status}`)}
                             </div>
                           ) : null}
                         </div>
-                        <div className="mt-3 text-2xl font-black text-gray-900">{post.title}</div>
+                        <div className="mt-3 text-2xl font-black text-white drop-shadow">{post.title}</div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="p-8">
+                    {!post.image_url && (
+                      <div className="flex items-start justify-between gap-4 mb-4">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-black uppercase tracking-widest">
+                              {tagLabel(post.tag || "")}
+                            </div>
+                            {me?.id === post.user_id && post.status && post.status !== "approved" ? (
+                              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-100 text-amber-700 text-xs font-black uppercase tracking-widest">
+                                {t(`moderation_status_${post.status}`)}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="mt-3 text-2xl font-black text-gray-900">{post.title}</div>
+                        </div>
+                        <button
+                          onClick={() => void onToggleBookmark(post.id)}
+                          className={`px-4 py-2 rounded-2xl border text-sm font-black transition-all ${
+                            post.bookmarked ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+                          }`}
+                        >
+                          {post.bookmarked ? t("community_saved") : t("community_save")}
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-3 text-sm text-gray-500 font-medium">
+                      {identity.avatarUrl ? (
+                        <Image src={identity.avatarUrl} alt={identity.name} width={36} height={36} className="w-9 h-9 rounded-2xl object-cover" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-2xl bg-gray-900 text-white flex items-center justify-center font-black">
+                          {identity.name.charAt(0)}
+                        </div>
+                      )}
+                      <div>
+                        <div className="font-black text-gray-900 leading-tight">{identity.name}</div>
+                        <div className="text-gray-400 font-bold">#{post.id}</div>
+                      </div>
+                      <div className="ml-auto flex items-center gap-2">
+                        <Link
+                          href={`/community/posts/${post.id}`}
+                          className="px-4 py-2 rounded-2xl bg-gray-50 hover:bg-gray-100 border border-gray-100 text-sm font-black text-gray-800 transition-all"
+                        >
+                          {t("community_open")}
+                        </Link>
+                        {me && me.role !== "admin" && me.id !== post.user_id ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReportStatus("idle");
+                              setReportReason("");
+                              setReportingPost(post);
+                            }}
+                            className="px-4 py-2 rounded-2xl bg-white hover:bg-gray-50 border border-gray-200 text-sm font-black text-gray-800 transition-all"
+                          >
+                            {t("community_report")}
+                          </button>
+                        ) : null}
+                        {canEditPost(post) ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingPost(post);
+                              setComposerImages(post.images || []);
+                              setComposerError(null);
+                              setComposerStatus("idle");
+                              setComposerOpen(true);
+                            }}
+                            className="px-4 py-2 rounded-2xl bg-white hover:bg-gray-50 border border-gray-200 text-sm font-black text-gray-800 transition-all"
+                          >
+                            {t("common_edit")}
+                          </button>
+                        ) : null}
+                        {canEditPost(post) ? (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!confirm(t("common_confirm_delete"))) return;
+                              try {
+                                await api.community.deletePost(post.id);
+                                setPosts((prev) => prev.filter((p) => p.id !== post.id));
+                              } catch {}
+                            }}
+                            className="px-4 py-2 rounded-2xl bg-white hover:bg-gray-50 border border-gray-200 text-sm font-black text-gray-800 transition-all"
+                          >
+                            {t("common_delete")}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <p className="mt-5 text-gray-600 font-medium leading-relaxed">
+                      {post.body}
+                    </p>
+
+                    <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => void onToggleLike(post.id)}
+                          className={`px-4 py-2 rounded-2xl text-sm font-black transition-all border ${
+                            post.liked ? "bg-red-50 text-red-600 border-red-100" : "bg-gray-50 text-gray-800 border-gray-100 hover:bg-gray-100"
+                          }`}
+                        >
+                          ♥ {post.likes_count}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void openComments(post)}
+                          className="px-4 py-2 rounded-2xl text-sm font-black bg-gray-50 text-gray-800 border border-gray-100 hover:bg-gray-100 transition-all"
+                        >
+                          💬 {post.comments_count}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void onShare(post.id)}
+                          className="px-4 py-2 rounded-2xl text-sm font-black bg-gray-50 text-gray-800 border border-gray-100 hover:bg-gray-100 transition-all"
+                        >
+                          ↗ {post.shares_count}
+                        </button>
                       </div>
                       <button
                         onClick={() => void onToggleBookmark(post.id)}
-                        className={`px-4 py-2 rounded-2xl border text-sm font-black transition-all ${
+                        className={`px-4 py-2 rounded-2xl text-sm font-black transition-all border ${
                           post.bookmarked ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
                         }`}
                       >
-                        {post.bookmarked ? t("community_saved") : t("community_save")}
+                        {post.bookmarked ? t("community_bookmarked") : t("community_bookmark")}
                       </button>
                     </div>
-                  )}
-
-                  <div className="flex items-center gap-3 text-sm text-gray-500 font-medium">
-                    <div className="w-9 h-9 rounded-2xl bg-gray-900 text-white flex items-center justify-center font-black">
-                      {(post.user?.full_name || t("community_member")).charAt(0)}
-                    </div>
-                    <div>
-                      <div className="font-black text-gray-900 leading-tight">{post.user?.full_name || t("community_member")}</div>
-                      <div className="text-gray-400 font-bold">#{post.id}</div>
-                    </div>
-                    <div className="ml-auto flex items-center gap-2">
-                      <Link
-                        href={`/community/posts/${post.id}`}
-                        className="px-4 py-2 rounded-2xl bg-gray-50 hover:bg-gray-100 border border-gray-100 text-sm font-black text-gray-800 transition-all"
-                      >
-                        {t("community_open")}
-                      </Link>
-                      {me && me.role !== "admin" && me.id !== post.user_id ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setReportStatus("idle");
-                            setReportReason("");
-                            setReportingPost(post);
-                          }}
-                          className="px-4 py-2 rounded-2xl bg-white hover:bg-gray-50 border border-gray-200 text-sm font-black text-gray-800 transition-all"
-                        >
-                          {t("community_report")}
-                        </button>
-                      ) : null}
-                      {canEditPost(post) ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingPost(post);
-                            setComposerImages(post.images || []);
-                            setComposerError(null);
-                            setComposerStatus("idle");
-                            setComposerOpen(true);
-                          }}
-                          className="px-4 py-2 rounded-2xl bg-white hover:bg-gray-50 border border-gray-200 text-sm font-black text-gray-800 transition-all"
-                        >
-                          {t("common_edit")}
-                        </button>
-                      ) : null}
-                      {canEditPost(post) ? (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!confirm(t("common_confirm_delete"))) return;
-                            try {
-                              await api.community.deletePost(post.id);
-                              setPosts((prev) => prev.filter((p) => p.id !== post.id));
-                            } catch {}
-                          }}
-                          className="px-4 py-2 rounded-2xl bg-white hover:bg-gray-50 border border-gray-200 text-sm font-black text-gray-800 transition-all"
-                        >
-                          {t("common_delete")}
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <p className="mt-5 text-gray-600 font-medium leading-relaxed">
-                    {post.body}
-                  </p>
-
-                  <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => void onToggleLike(post.id)}
-                        className={`px-4 py-2 rounded-2xl text-sm font-black transition-all border ${
-                          post.liked ? "bg-red-50 text-red-600 border-red-100" : "bg-gray-50 text-gray-800 border-gray-100 hover:bg-gray-100"
-                        }`}
-                      >
-                        ♥ {post.likes_count}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void openComments(post)}
-                        className="px-4 py-2 rounded-2xl text-sm font-black bg-gray-50 text-gray-800 border border-gray-100 hover:bg-gray-100 transition-all"
-                      >
-                        💬 {post.comments_count}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void onShare(post.id)}
-                        className="px-4 py-2 rounded-2xl text-sm font-black bg-gray-50 text-gray-800 border border-gray-100 hover:bg-gray-100 transition-all"
-                      >
-                        ↗ {post.shares_count}
-                      </button>
-                    </div>
-                    <button
-                      onClick={() => void onToggleBookmark(post.id)}
-                      className={`px-4 py-2 rounded-2xl text-sm font-black transition-all border ${
-                        post.bookmarked ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-                      }`}
-                    >
-                      {post.bookmarked ? t("community_bookmarked") : t("community_bookmark")}
-                    </button>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {!loading && !fetchError && posts.length === 0 && (
               <div className="bg-white rounded-[2.5rem] border border-dashed border-gray-200 py-20 text-center">
@@ -750,9 +768,20 @@ export default function CommunityPage() {
                 ) : (
                   comments.map((c) => (
                     <div key={c.id} className="rounded-[2rem] border border-gray-100 bg-gray-50 p-6">
+                      {(() => {
+                        const identity = getDisplayIdentity(c.user_id, c.user);
+                        return (
                       <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="font-black text-gray-900">{c.user?.full_name || t("community_member")}</div>
+                        <div className="min-w-0 flex items-start gap-3">
+                          {identity.avatarUrl ? (
+                            <Image src={identity.avatarUrl} alt={identity.name} width={44} height={44} className="w-11 h-11 rounded-2xl object-cover" />
+                          ) : (
+                            <div className="w-11 h-11 rounded-2xl bg-gray-900 text-white flex items-center justify-center font-black shrink-0">
+                              {identity.name.charAt(0)}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="font-black text-gray-900">{identity.name}</div>
                           {editingComment?.id === c.id ? (
                             <input
                               value={editingComment.body}
@@ -762,6 +791,7 @@ export default function CommunityPage() {
                           ) : (
                             <div className="mt-3 text-gray-700 font-medium whitespace-pre-wrap">{c.body}</div>
                           )}
+                        </div>
                         </div>
                         {canEditComment(c) ? (
                           <div className="flex gap-2">
@@ -807,6 +837,8 @@ export default function CommunityPage() {
                           </div>
                         ) : null}
                       </div>
+                        );
+                      })()}
                     </div>
                   ))
                 )}

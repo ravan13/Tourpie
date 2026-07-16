@@ -1,9 +1,18 @@
 const API_BASE_URL = "/api";
 
-const SESSION_COOKIE_NAME = "tourpie_token";
+const SESSION_TOKEN_STORAGE_KEY = "token";
+const SESSION_REMEMBER_KEY = "tourpie:remember_me";
 export const SESSION_ACTIVITY_KEY = "tourpie:last_activity";
 export const SESSION_LOGOUT_KEY = "tourpie:logout_at";
 export const SESSION_EXPIRED_KEY = "tourpie:session_expired";
+
+let currentUserRequest: Promise<User | null> | null = null;
+let currentUserCache: User | null | undefined;
+let refreshRequest: Promise<string | null> | null = null;
+
+type CurrentUserUpdateDetail = {
+  force?: boolean;
+};
 
 export function touchSessionActivity(source?: string) {
   if (typeof window === "undefined") return;
@@ -47,26 +56,95 @@ export function clearCookieValue(name: string) {
 
 export function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
-  const fromStorage = localStorage.getItem("token");
+  const fromSession = window.sessionStorage.getItem(SESSION_TOKEN_STORAGE_KEY);
+  if (fromSession) return fromSession;
+  const fromStorage = localStorage.getItem(SESSION_TOKEN_STORAGE_KEY);
   return fromStorage || null;
 }
 
-export function setSessionToken(token: string) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem("token", token);
-  void fetch("/api/auth/session", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token, maxAgeSeconds: 60 * 60 * 24 * 30 }),
-  }).catch(() => undefined);
-  window.dispatchEvent(new Event("tourpie:auth"));
+export function getRememberMePreference(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    if (window.sessionStorage.getItem(SESSION_TOKEN_STORAGE_KEY)) return false;
+    if (localStorage.getItem(SESSION_REMEMBER_KEY) === "0") return false;
+  } catch {}
+  return true;
 }
 
-export function clearSessionToken() {
+function invalidateCurrentUserCache() {
+  currentUserRequest = null;
+  currentUserCache = undefined;
+}
+
+export function syncCurrentUserProfile(user: User | null, options?: { emitEvent?: boolean }) {
+  currentUserRequest = null;
+  currentUserCache = user;
+  if (typeof window !== "undefined" && options?.emitEvent !== false) {
+    window.dispatchEvent(new CustomEvent<CurrentUserUpdateDetail>("tourpie:user-updated", { detail: { force: false } }));
+  }
+}
+
+export function requestCurrentUserRefresh(options?: { emitEvent?: boolean }) {
+  invalidateCurrentUserCache();
+  if (typeof window !== "undefined" && options?.emitEvent !== false) {
+    window.dispatchEvent(new CustomEvent<CurrentUserUpdateDetail>("tourpie:user-updated", { detail: { force: true } }));
+  }
+}
+
+async function syncSessionCookie(token: string, rememberMe: boolean) {
+  const payload = decodeJwtPayload(token);
+  const exp = typeof payload?.exp === "number" ? payload.exp : null;
+  const maxAgeSeconds =
+    rememberMe && typeof exp === "number"
+      ? Math.max(60, Math.floor(exp - Date.now() / 1000))
+      : null;
+
+  await fetch("/api/auth/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, maxAgeSeconds, sessionOnly: !rememberMe }),
+  }).catch(() => undefined);
+}
+
+export async function setSessionToken(
+  token: string,
+  options?: { rememberMe?: boolean; emitEvent?: boolean }
+) {
   if (typeof window === "undefined") return;
-  localStorage.removeItem("token");
-  void fetch("/api/auth/session", { method: "DELETE" }).catch(() => undefined);
-  window.dispatchEvent(new Event("tourpie:auth"));
+  const rememberMe = options?.rememberMe ?? getRememberMePreference();
+  try {
+    if (rememberMe) {
+      localStorage.setItem(SESSION_TOKEN_STORAGE_KEY, token);
+      localStorage.setItem(SESSION_REMEMBER_KEY, "1");
+      window.sessionStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
+    } else {
+      window.sessionStorage.setItem(SESSION_TOKEN_STORAGE_KEY, token);
+      localStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
+      localStorage.setItem(SESSION_REMEMBER_KEY, "0");
+    }
+  } catch {
+    localStorage.setItem(SESSION_TOKEN_STORAGE_KEY, token);
+    localStorage.setItem(SESSION_REMEMBER_KEY, rememberMe ? "1" : "0");
+  }
+  invalidateCurrentUserCache();
+  touchSessionActivity("set-token");
+  await syncSessionCookie(token, rememberMe);
+  if (options?.emitEvent !== false) {
+    window.dispatchEvent(new Event("tourpie:auth"));
+  }
+}
+
+export async function clearSessionToken(options?: { emitEvent?: boolean }) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
+    window.sessionStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
+  } catch {}
+  syncCurrentUserProfile(null, { emitEvent: false });
+  await fetch("/api/auth/session", { method: "DELETE" }).catch(() => undefined);
+  if (options?.emitEvent !== false) {
+    window.dispatchEvent(new Event("tourpie:auth"));
+  }
 }
 
 export function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -91,6 +169,74 @@ export function getStoredTokenPayload(): Record<string, unknown> | null {
   const token = getStoredToken();
   if (!token) return null;
   return decodeJwtPayload(token);
+}
+
+export async function ensureFreshSession(minValiditySeconds = 120): Promise<string | null> {
+  const token = getStoredToken();
+  if (!token) return null;
+
+  const payload = decodeJwtPayload(token);
+  const exp = typeof payload?.exp === "number" ? payload.exp : null;
+  if (!exp || exp * 1000 - Date.now() > minValiditySeconds * 1000) {
+    return token;
+  }
+
+  if (!refreshRequest) {
+    refreshRequest = fetchApi(`/users/refresh`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    })
+      .then(async (result: { access_token?: string | null }) => {
+        const nextToken = typeof result?.access_token === "string" ? result.access_token : null;
+        if (!nextToken) return null;
+        await setSessionToken(nextToken, { rememberMe: getRememberMePreference(), emitEvent: false });
+        return nextToken;
+      })
+      .catch(() => null)
+      .finally(() => {
+        refreshRequest = null;
+      });
+  }
+
+  return refreshRequest;
+}
+
+export async function loadCurrentUser(force = false): Promise<User | null> {
+  const token = getStoredToken();
+  if (!token) {
+    currentUserCache = null;
+    currentUserRequest = null;
+    return null;
+  }
+
+  await ensureFreshSession();
+  if (!getStoredToken()) {
+    currentUserCache = null;
+    currentUserRequest = null;
+    return null;
+  }
+
+  if (!force && currentUserCache !== undefined) return currentUserCache;
+  if (!force && currentUserRequest) return currentUserRequest;
+
+  currentUserRequest = fetchApi(`/users/me`)
+    .then((user) => {
+      currentUserCache = user as User;
+      return currentUserCache;
+    })
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : "";
+      if (isAuthErrorMessage(message) || message === "Not authenticated") {
+        currentUserCache = null;
+        return null;
+      }
+      throw error;
+    })
+    .finally(() => {
+      currentUserRequest = null;
+    });
+
+  return currentUserRequest;
 }
 
 export type TourPieLogoutReason = "inactivity" | "manual" | "auth";
@@ -131,11 +277,11 @@ export function broadcastLogout(reason: TourPieLogoutReason) {
   } catch {}
 }
 
-export function clearAuthAndRedirect(reason: TourPieLogoutReason) {
+export async function clearAuthAndRedirect(reason: TourPieLogoutReason) {
   if (typeof window === "undefined") return;
   if (reason !== "manual") markSessionExpired(reason);
   broadcastLogout(reason);
-  clearSessionToken();
+  await clearSessionToken();
 }
 
 export async function fetchApi(endpoint: string, options: RequestInit = {}) {
@@ -151,6 +297,10 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}) {
 
   if (body && !isMultipartBody && !isFormBody && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
+  }
+
+  if (typeof window !== "undefined" && endpoint !== "/users/refresh") {
+    await ensureFreshSession().catch(() => null);
   }
 
   // Add Auth token if available in session storage/cookie
@@ -220,7 +370,7 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}) {
             response: detail,
           });
         }
-        clearAuthAndRedirect("auth");
+        await clearAuthAndRedirect("auth");
         throw new Error("Not authenticated");
       }
 
@@ -320,6 +470,7 @@ export interface Review {
   user?: {
     id: number;
     full_name?: string | null;
+    avatar_url?: string | null;
   } | null;
 }
 
@@ -354,7 +505,7 @@ export interface CommunityPost {
   reviewed_by_user_id?: number | null;
   created_at: string;
   updated_at: string;
-  user?: { id: number; full_name?: string | null } | null;
+  user?: { id: number; full_name?: string | null; avatar_url?: string | null } | null;
   liked?: boolean | null;
   bookmarked?: boolean | null;
 }
@@ -371,7 +522,7 @@ export interface CommunityComment {
   reviewed_by_user_id?: number | null;
   created_at: string;
   updated_at: string;
-  user?: { id: number; full_name?: string | null } | null;
+  user?: { id: number; full_name?: string | null; avatar_url?: string | null } | null;
 }
 
 export interface BlogArticleSummary {
@@ -440,7 +591,7 @@ export type AgencyReviewItem = {
   rating: number;
   comment?: string | null;
   created_at: string;
-  user?: { id: number; full_name?: string | null } | null;
+  user?: { id: number; full_name?: string | null; avatar_url?: string | null } | null;
 };
 
 export type AgencyTeamMember = {
@@ -599,6 +750,7 @@ export interface SocialLoginRequest {
   provider: "google" | "apple";
   email: string;
   full_name?: string;
+  remember_me?: boolean;
 }
 
 export interface OnboardingRequest {
@@ -1111,12 +1263,12 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
-    adminLoginStart: (data: { email: string; password: string; language?: import("@/context/LanguageContext").Language }): Promise<{ two_factor_required: boolean }> =>
+    adminLoginStart: (data: { email: string; password: string; language?: import("@/context/LanguageContext").Language; remember_me?: boolean }): Promise<{ two_factor_required: boolean }> =>
       fetchApi(`/users/admin/login-start`, {
         method: "POST",
         body: JSON.stringify(data),
       }),
-    adminVerify2fa: (data: { email: string; code: string }): Promise<AuthResponse> =>
+    adminVerify2fa: (data: { email: string; code: string; remember_me?: boolean }): Promise<AuthResponse> =>
       fetchApi(`/users/admin/verify-2fa`, {
         method: "POST",
         body: JSON.stringify(data),

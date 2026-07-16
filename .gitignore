@@ -1,1 +1,12 @@
 .vercel
+
+# Python
+__pycache__/
+*.pyc
+
+# Temporary QA files
+temp_verify_email.txt
+debug-login-redirect-qa.md
+
+# TypeScript
+*.tsbuildinfo

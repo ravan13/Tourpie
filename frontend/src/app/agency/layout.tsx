@@ -82,7 +82,7 @@ export default function AgencyLayout({ children }: { children: ReactNode }) {
         try {
           const me = await api.auth.me();
           if (me?.role !== "agency") {
-            clearSessionToken();
+            await clearSessionToken();
             if (debugRedirects) console.warn("[agency/layout] redirect", { from: pathname, to: "/login", reason: "role_mismatch" });
             router.replace("/login");
             return;
@@ -92,7 +92,7 @@ export default function AgencyLayout({ children }: { children: ReactNode }) {
           if (isAuthErrorMessage(message)) {
             markSessionExpired("auth");
             broadcastLogout("auth");
-            clearSessionToken();
+            await clearSessionToken();
             if (debugRedirects) console.warn("[agency/layout] redirect", { from: pathname, to: "/login?reason=session_expired", reason: "auth" });
             router.replace("/login?reason=session_expired");
             return;

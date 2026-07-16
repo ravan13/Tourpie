@@ -278,6 +278,7 @@ class AdminLoginStartRequest(BaseModel):
     email: EmailStr
     password: str
     language: Optional[str] = None
+    remember_me: bool = False
 
 class AdminLoginStartResponse(BaseModel):
     two_factor_required: bool = True
@@ -285,6 +286,7 @@ class AdminLoginStartResponse(BaseModel):
 class AdminVerify2FARequest(BaseModel):
     email: EmailStr
     code: str
+    remember_me: bool = False
 
 class AdminImpersonateRequest(BaseModel):
     role: str
@@ -293,6 +295,7 @@ class SocialLoginRequest(BaseModel):
     provider: str
     email: EmailStr
     full_name: Optional[str] = None
+    remember_me: bool = False
 
 class Notification(BaseModel):
     id: int
@@ -492,6 +495,7 @@ class Review(ReviewBase):
 class UserPublic(BaseModel):
     id: int
     full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True

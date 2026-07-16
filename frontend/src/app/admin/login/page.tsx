@@ -1,7 +1,7 @@
 "use client";
 
 import { useLanguage } from "@/context/LanguageContext";
-import { api, getStoredToken, getStoredTokenPayload, SESSION_EXPIRED_KEY, setSessionToken } from "@/lib/api";
+import { api, getRememberMePreference, getStoredToken, getStoredTokenPayload, SESSION_EXPIRED_KEY, setSessionToken } from "@/lib/api";
 import Logo from "@/components/Logo";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -20,6 +20,7 @@ export default function AdminLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [rememberMe, setRememberMe] = useState<boolean>(() => getRememberMePreference());
   const [resetCode, setResetCode] = useState("");
   const [resetNewPassword, setResetNewPassword] = useState("");
   const [resetNewPasswordConfirm, setResetNewPasswordConfirm] = useState("");
@@ -101,7 +102,7 @@ export default function AdminLoginPage() {
           meta
         );
       }
-      await api.auth.adminLoginStart({ email, password, language });
+      await api.auth.adminLoginStart({ email, password, language, remember_me: rememberMe });
       setStep("2fa");
       setMessage({ type: "success", text: t("admin_2fa_prompt") });
     } catch (error) {
@@ -118,8 +119,8 @@ export default function AdminLoginPage() {
     setLoading(true);
     setMessage(null);
     try {
-      const res = await api.auth.adminVerify2fa({ email, code });
-      setSessionToken(res.access_token);
+      const res = await api.auth.adminVerify2fa({ email, code, remember_me: rememberMe });
+      await setSessionToken(res.access_token, { rememberMe });
       router.push("/admin");
     } catch (error) {
       const text = error instanceof Error ? error.message : t("auth_error");
@@ -215,6 +216,15 @@ export default function AdminLoginPage() {
                   placeholder="••••••••"
                 />
                 <div className="mt-3 flex justify-end">
+                  <label className="mr-auto inline-flex items-center gap-2 text-sm font-bold text-gray-600">
+                    <input
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    {t("auth_remember_me")}
+                  </label>
                   <button
                     type="button"
                     disabled={loading}

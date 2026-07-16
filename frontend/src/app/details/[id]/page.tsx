@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { demoMarketplacePackageMap } from "@/lib/demoMarketplaceData";
 import type { MarketplacePackage } from "@/lib/marketplace";
 import { getPackageDisplayDescription, getPackageDisplayDestination, getPackageDisplayTitle } from "@/lib/marketplace";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 function sanitizeImageSrc(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -18,6 +19,7 @@ function sanitizeImageSrc(value: unknown) {
 
 export default function PackageDetailsPage() {
   const { t, language } = useLanguage();
+  const { user: me } = useCurrentUser();
   const params = useParams<{ id: string }>();
   const id = params?.id;
   const router = useRouter();
@@ -125,6 +127,21 @@ export default function PackageDetailsPage() {
       secondaryImages,
     };
   }, [language, pkg, reviews, t]);
+
+  const getReviewIdentity = (review: Review) => {
+    const resolved =
+      me && me.id === review.user_id
+        ? {
+            id: me.id,
+            full_name: me.full_name || review.user?.full_name || null,
+            avatar_url: me.avatar_url ?? review.user?.avatar_url ?? null,
+          }
+        : review.user || null;
+    return {
+      name: resolved?.full_name || t("details_review_user"),
+      avatarUrl: resolved?.avatar_url || null,
+    };
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-12">
@@ -306,17 +323,29 @@ export default function PackageDetailsPage() {
             <div className="mb-12">
               <h2 className="text-2xl font-bold mb-6">{t("details_reviews_section")}</h2>
               <div className="space-y-4">
-                {reviews.slice(0, 3).map((r) => (
+                {reviews.slice(0, 3).map((r) => {
+                  const identity = getReviewIdentity(r);
+                  return (
                   <div key={r.id} className="bg-white border border-gray-100 rounded-2xl p-6">
-                    <div className="flex items-center justify-between">
-                      <p className="font-bold text-gray-900">
-                        {t("details_review_by", { name: r.user?.full_name || t("details_review_user") })}
-                      </p>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {identity.avatarUrl ? (
+                          <Image src={identity.avatarUrl} alt={identity.name} width={44} height={44} className="w-11 h-11 rounded-2xl object-cover" />
+                        ) : (
+                          <div className="w-11 h-11 rounded-2xl bg-gray-900 text-white flex items-center justify-center font-black shrink-0">
+                            {identity.name.charAt(0)}
+                          </div>
+                        )}
+                        <p className="font-bold text-gray-900">
+                          {t("details_review_by", { name: identity.name })}
+                        </p>
+                      </div>
                       <p className="font-bold text-yellow-500">{r.rating}/5</p>
                     </div>
                     {r.comment ? <p className="text-gray-600 mt-3">{r.comment}</p> : null}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : null}

@@ -1000,6 +1000,24 @@ body {
   transform: translate3d(0, 0, 0);
 }
 
+@media (max-width: 639px) {
+  .tp-travel-assistant {
+    width: 56px;
+    height: 56px;
+    padding: 8px;
+    justify-content: center;
+  }
+
+  .tp-travel-assistant--open {
+    width: 56px;
+  }
+
+  .tp-travel-assistant-body,
+  .tp-travel-assistant-arrow {
+    display: none;
+  }
+}
+
 .tp-assistant-drawer {
   border-radius: 28px 28px 0 0;
   border: 1px solid rgba(255, 255, 255, 0.6);

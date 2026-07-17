@@ -14,6 +14,9 @@ function buildImageUrl(prompt: string, imageSize: "landscape_16_9" | "portrait_4
   return `https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=${encodeURIComponent(prompt)}&image_size=${imageSize}`;
 }
 
+const EXPERIENCE_IMAGE_BLUR =
+  "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 10'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%23dbeafe'/%3E%3Cstop offset='1' stop-color='%23e2e8f0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='16' height='10' rx='1.6' fill='url(%23g)'/%3E%3C/svg%3E";
+
 function hashSeed(value: string) {
   let hash = 0;
   for (let index = 0; index < value.length; index += 1) {
@@ -674,7 +677,7 @@ export default function ExperiencesPage() {
     "overflow-hidden rounded-[2.25rem] border border-white/70 bg-white/76 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl";
   const elevatedCardClass =
     "group overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_18px_46px_rgba(15,23,42,0.08)] motion-safe:transition-all motion-safe:duration-500 motion-safe:hover:-translate-y-1.5 motion-safe:hover:shadow-[0_30px_72px_rgba(15,23,42,0.14)]";
-  const hoverImageClass = "object-cover motion-safe:transition-transform motion-safe:duration-700 motion-safe:group-hover:scale-[1.04]";
+  const hoverImageClass = "object-cover bg-slate-200 motion-safe:transition-transform motion-safe:duration-700 motion-safe:group-hover:scale-[1.04]";
 
   return (
     <div className="tp-page-shell">
@@ -713,7 +716,7 @@ export default function ExperiencesPage() {
               </div>
 
               <div className="mt-8 rounded-[2rem] border border-white/80 bg-white/86 p-4 shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
-                <div className="flex flex-col gap-3 xl:flex-row">
+                <div className="flex flex-col gap-3 lg:flex-row">
                   <div className="flex min-h-14 flex-1 items-center gap-3 rounded-[1.5rem] border border-slate-100 bg-slate-50/85 px-4 py-3">
                     <span className="text-lg text-slate-400">⌕</span>
                     <input
@@ -750,7 +753,7 @@ export default function ExperiencesPage() {
               </div>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] xl:grid-cols-1 2xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
               <Link
                 href={spotlightExperience && spotlightExperience.id > 0 ? `/community/posts/${spotlightExperience.id}` : "/experiences"}
                 prefetch={false}
@@ -762,6 +765,8 @@ export default function ExperiencesPage() {
                   fill
                   className={hoverImageClass}
                   sizes="(max-width: 1279px) 100vw, 560px"
+                  placeholder="blur"
+                  blurDataURL={EXPERIENCE_IMAGE_BLUR}
                   priority
                 />
                 <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.1),rgba(15,23,42,0.7))]" />
@@ -796,7 +801,7 @@ export default function ExperiencesPage() {
                 </div>
               </Link>
 
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-1">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
                 {supportingFeatured.map((item, index) => (
                   <Link
                     key={item.id}
@@ -804,13 +809,15 @@ export default function ExperiencesPage() {
                     prefetch={false}
                     className="group relative overflow-hidden rounded-[2rem] border border-white/80 bg-slate-200 shadow-[0_22px_52px_rgba(15,23,42,0.12)] motion-safe:transition-all motion-safe:duration-500 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-[0_28px_60px_rgba(15,23,42,0.14)]"
                   >
-                    <div className="relative aspect-[4/5]">
+                    <div className="relative aspect-[16/10] sm:aspect-[4/5]">
                       <Image
                         src={item.cover || heroVisuals[index + 1]}
                         alt={item.title}
                         fill
                         className={hoverImageClass}
                         sizes="(max-width: 1024px) 50vw, 280px"
+                        placeholder="blur"
+                        blurDataURL={EXPERIENCE_IMAGE_BLUR}
                       />
                       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.08),rgba(15,23,42,0.62))]" />
                       <div className="absolute inset-x-0 bottom-0 p-5 text-white">
@@ -830,7 +837,7 @@ export default function ExperiencesPage() {
           </div>
         </section>
 
-        <section className="sticky top-20 z-20 rounded-[2.15rem] border border-white/70 bg-white/78 p-4 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+        <section className="z-20 rounded-[2.15rem] border border-white/70 bg-white/78 p-4 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl xl:sticky xl:top-20">
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
@@ -844,13 +851,13 @@ export default function ExperiencesPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
               {categories.map((category) => (
                 <button
                   key={category.id}
                   type="button"
                   onClick={() => setActiveCategory(category.id)}
-                  className={`inline-flex min-h-11 items-center gap-2 rounded-full px-4 py-2 text-sm font-black transition ${
+                  className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-black transition ${
                     activeCategory === category.id
                       ? "bg-blue-600 text-white shadow-[0_16px_36px_rgba(59,130,246,0.24)]"
                       : "border border-white/90 bg-white/88 text-slate-600 hover:bg-slate-50"
@@ -991,13 +998,15 @@ export default function ExperiencesPage() {
                 <div className="mt-6 grid gap-4 lg:grid-cols-2">
                   {featuredExperiences.map((item, index) => (
                     <article key={item.id} className={`${elevatedCardClass} ${index === 0 ? "lg:col-span-2" : ""}`}>
-                      <div className={`relative overflow-hidden ${index === 0 ? "aspect-[16/9]" : "aspect-[4/5]"}`}>
+                      <div className={`relative overflow-hidden ${index === 0 ? "aspect-[16/9]" : "aspect-[16/10] sm:aspect-[4/5]"}`}>
                         <Image
                           src={item.cover}
                           alt={item.title}
                           fill
                           className={hoverImageClass}
                           sizes={index === 0 ? "(max-width: 1024px) 100vw, 900px" : "(max-width: 1024px) 50vw, 420px"}
+                          placeholder="blur"
+                          blurDataURL={EXPERIENCE_IMAGE_BLUR}
                         />
                         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.04),rgba(15,23,42,0.68))]" />
                         <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-3 p-5">
@@ -1112,7 +1121,15 @@ export default function ExperiencesPage() {
                   {trendingShowcase.map((item) => (
                     <article key={item.id} className={elevatedCardClass}>
                       <div className="relative aspect-[4/5] overflow-hidden">
-                        <Image src={item.cover} alt={item.title} fill className={hoverImageClass} sizes="(max-width: 1024px) 50vw, 360px" />
+                        <Image
+                          src={item.cover}
+                          alt={item.title}
+                          fill
+                          className={hoverImageClass}
+                          sizes="(max-width: 1024px) 50vw, 360px"
+                          placeholder="blur"
+                          blurDataURL={EXPERIENCE_IMAGE_BLUR}
+                        />
                         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.06),rgba(15,23,42,0.58))]" />
                         <div className="absolute inset-x-0 bottom-0 p-5 text-white">
                           <div className="text-xs font-black uppercase tracking-[0.22em] text-white/72">{item.categoryLabel}</div>
@@ -1158,7 +1175,15 @@ export default function ExperiencesPage() {
                   {recommendedExperiences.map((item) => (
                     <article key={item.id} className={elevatedCardClass}>
                       <div className="relative aspect-[16/11] overflow-hidden">
-                        <Image src={item.cover} alt={item.title} fill className={hoverImageClass} sizes="(max-width: 1024px) 100vw, 420px" />
+                        <Image
+                          src={item.cover}
+                          alt={item.title}
+                          fill
+                          className={hoverImageClass}
+                          sizes="(max-width: 1024px) 100vw, 420px"
+                          placeholder="blur"
+                          blurDataURL={EXPERIENCE_IMAGE_BLUR}
+                        />
                         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.04),rgba(15,23,42,0.50))]" />
                         <div className="absolute left-4 top-4 rounded-full border border-white/20 bg-slate-950/40 px-3 py-1.5 text-xs font-black uppercase tracking-[0.2em] text-white backdrop-blur-md">
                           {item.categoryLabel}
@@ -1185,7 +1210,7 @@ export default function ExperiencesPage() {
               </div>
             </section>
 
-            <section className={surfaceClass}>
+            <section className={`${surfaceClass} p-6`}>
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
                   <div className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">{t("exp_stories_title")}</div>
@@ -1204,6 +1229,8 @@ export default function ExperiencesPage() {
                         fill
                         className={hoverImageClass}
                         sizes="(max-width: 1024px) 100vw, 420px"
+                        placeholder="blur"
+                        blurDataURL={EXPERIENCE_IMAGE_BLUR}
                       />
                       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.04),rgba(15,23,42,0.52))]" />
                       <div className="absolute inset-x-0 bottom-0 p-5 text-white">

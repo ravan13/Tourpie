@@ -358,7 +358,7 @@ export default function MarketplacePage() {
               {t("marketplace_badge")}
             </div>
             <div className="max-w-3xl space-y-4">
-              <h1 className="text-4xl font-black tracking-[-0.04em] text-slate-950 sm:text-5xl">
+              <h1 className="break-words text-4xl font-black tracking-[-0.04em] text-slate-950 sm:text-5xl">
                 {t("marketplace_title")}
               </h1>
               <p className="max-w-2xl text-base font-medium leading-7 text-slate-600 sm:text-lg">
@@ -717,7 +717,7 @@ export default function MarketplacePage() {
 
                     <div className="space-y-4 p-5">
                       <div className="flex items-start justify-between gap-4">
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <h3 className="text-xl font-black tracking-[-0.03em] text-slate-950">
                             {getPackageDisplayTitle(pkg, language)}
                           </h3>
@@ -764,8 +764,8 @@ export default function MarketplacePage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
-                        <div className="flex items-center gap-3">
+                      <div className="flex flex-col gap-3 rounded-2xl bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex min-w-0 items-center gap-3">
                           <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[#022A6B] to-[#0B4BB8] text-xs font-black text-white">
                             {companyLogo ? (
                               <Image
@@ -779,14 +779,14 @@ export default function MarketplacePage() {
                               getAgencyInitials(companyInfo?.name || pkg.agency?.name || "TP")
                             )}
                           </div>
-                          <div>
+                          <div className="min-w-0">
                             <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">{t("marketplace_label_company")}</p>
-                            <p className="mt-1 font-black text-slate-900">
+                            <p className="mt-1 break-words font-black text-slate-900">
                               {companyInfo ? getAgencyDisplayName(companyInfo, language) : pkg.agency?.name || t("booking_partner")}
                             </p>
                           </div>
                         </div>
-                        <div className="text-right">
+                        <div className="text-left sm:text-right">
                           <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">{t("marketplace_label_max_travelers")}</p>
                           <p className="mt-1 text-xs font-bold text-slate-500">{pkg.capacity}</p>
                         </div>

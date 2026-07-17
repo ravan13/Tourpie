@@ -157,17 +157,17 @@ export default function PackageDetailsPage() {
       ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
         {/* Left: Content */}
-        <div className="lg:col-span-2">
-          <nav className="flex mb-8 text-sm text-gray-500">
+        <div className="min-w-0 lg:col-span-2">
+          <nav className="mb-8 flex flex-wrap text-sm text-gray-500">
             <Link href="/" className="hover:text-blue-600">{t("common_home")}</Link>
             <span className="mx-2">/</span>
             <Link href={resultsHref} className="hover:text-blue-600">{t("details_breadcrumb_packages")}</Link>
             <span className="mx-2">/</span>
-            <span className="text-gray-900 font-medium">{displayPkg.title}</span>
+            <span className="font-medium text-gray-900">{displayPkg.title}</span>
           </nav>
 
-          <div className="flex items-start justify-between gap-4 mb-4">
-            <h1 className="text-4xl font-extrabold text-gray-900">{displayPkg.title}</h1>
+          <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <h1 className="min-w-0 break-words text-3xl font-extrabold text-gray-900 sm:text-4xl">{displayPkg.title}</h1>
             <button
               type="button"
               disabled={savingFavorite}
@@ -194,7 +194,7 @@ export default function PackageDetailsPage() {
                   }
                 })();
               }}
-              className={`shrink-0 rounded-2xl border px-4 py-3 font-black transition-all ${
+              className={`w-full shrink-0 rounded-2xl border px-4 py-3 font-black transition-all sm:w-auto ${
                 favorite ? "bg-red-50 text-red-600 border-red-100" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
               } ${savingFavorite ? "opacity-60 cursor-not-allowed" : ""}`}
               aria-label={favorite ? t("results_fav_remove") : t("results_fav_add")}
@@ -207,7 +207,7 @@ export default function PackageDetailsPage() {
               </span>
             </button>
           </div>
-          <div className="flex items-center gap-4 mb-8">
+          <div className="mb-8 flex flex-wrap items-center gap-3 sm:gap-4">
             <div className="flex items-center text-yellow-400">
               {"★".repeat(5)}
               <span className="ml-2 text-gray-900 font-bold">{displayPkg.rating}</span>
@@ -220,8 +220,8 @@ export default function PackageDetailsPage() {
           </div>
 
           {/* Image Gallery */}
-          <div className="grid grid-cols-2 gap-4 mb-12 h-[500px]">
-            <div className="relative h-full rounded-2xl overflow-hidden shadow-lg col-span-2 md:col-span-1">
+          <div className="mb-12 grid grid-cols-1 gap-4 md:grid-cols-2 md:h-[500px]">
+            <div className="relative aspect-[16/10] overflow-hidden rounded-2xl shadow-lg md:h-full md:aspect-auto">
               <Image
                 src={displayPkg.primaryImage}
                 alt={displayPkg.title}
@@ -230,7 +230,7 @@ export default function PackageDetailsPage() {
                 sizes="(max-width: 768px) 100vw, 50vw"
               />
             </div>
-            <div className="hidden md:grid grid-rows-2 gap-4 h-full">
+            <div className="hidden h-full md:grid md:grid-rows-2 md:gap-4">
               {displayPkg.secondaryImages.map((imageSrc, index) => (
                 <div key={`${imageSrc}-${index}`} className="relative h-full rounded-2xl overflow-hidden shadow-lg">
                   <Image src={imageSrc} alt={displayPkg.title} fill className="object-cover" sizes="25vw" />

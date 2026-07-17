@@ -370,7 +370,7 @@ export default function CustomTripEntryPoint() {
       ) : null}
 
       {widgetReady && !sheetOpen && !assistantDrawerOpen && !requestFlowOpen ? (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+16px)] right-4 z-[1060] sm:right-6">
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+16px)] right-6 z-[1060] hidden sm:block">
           <div
             onMouseEnter={() => setAssistantExpanded(true)}
             onMouseLeave={() => {

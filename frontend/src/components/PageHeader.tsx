@@ -26,7 +26,7 @@ export default function PageHeader({
               {badge}
             </div>
           )}
-          <h1 className="mt-6 max-w-4xl text-4xl font-black tracking-[-0.04em] text-slate-950 md:text-5xl lg:text-6xl leading-[0.94]">
+          <h1 className="mt-6 max-w-4xl break-words text-2xl font-black leading-[0.98] tracking-[-0.04em] text-slate-950 sm:text-4xl md:text-5xl lg:text-6xl">
             {title}
           </h1>
           {subtitle && (

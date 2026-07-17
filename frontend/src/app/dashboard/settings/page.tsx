@@ -38,7 +38,7 @@ function toneClasses(tone: Tone) {
 
 function StatusPill({ children, tone = "neutral" }: { children: ReactNode; tone?: Tone }) {
   return (
-    <div className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-widest ${toneClasses(tone)}`}>
+    <div className={`inline-flex max-w-full items-center rounded-full border px-3 py-1 text-center text-[11px] font-black uppercase tracking-widest ${toneClasses(tone)}`}>
       {children}
     </div>
   );
@@ -58,12 +58,12 @@ function InfoTile({
   tone?: Tone;
 }) {
   return (
-    <Card variant="solid" padding="sm" className="rounded-[1.75rem]">
+    <Card variant="solid" padding="sm" className="min-w-0 rounded-[1.75rem] overflow-hidden">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="text-[11px] font-black uppercase tracking-widest text-gray-400">{label}</div>
-          <div className="mt-2 text-base font-black text-gray-900">{value}</div>
-          {helper ? <div className="mt-2 text-sm font-medium text-gray-500">{helper}</div> : null}
+          <div className="mt-2 break-words text-base font-black text-gray-900">{value}</div>
+          {helper ? <div className="mt-2 break-words text-sm font-medium text-gray-500">{helper}</div> : null}
         </div>
         <div className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border text-lg ${toneClasses(tone)}`}>{icon}</div>
       </div>
@@ -87,7 +87,7 @@ function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <Card id={id} variant="muted" className="rounded-[2rem]">
+    <Card id={id} variant="muted" className="min-w-0 overflow-hidden rounded-[2rem]">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
@@ -98,7 +98,7 @@ function SectionCard({
             </div>
           </div>
         </div>
-        {actions ? <div className="flex flex-wrap gap-3">{actions}</div> : null}
+        {actions ? <div className="flex max-w-full flex-wrap gap-3">{actions}</div> : null}
       </div>
       <div className="mt-5">{children}</div>
     </Card>
@@ -452,7 +452,7 @@ export default function SettingsPage() {
 
   return (
     <DashboardShell title={t("dash_settings_title")} subtitle={t("dash_settings_subtitle")} nav={nav}>
-      <div className="space-y-6">
+      <div className="space-y-6 overflow-x-clip">
         {loading ? (
           <Card className="rounded-[2.5rem] p-12 text-center font-bold text-gray-500">{t("common_loading")}</Card>
         ) : !isLoggedIn || !me ? (
@@ -615,11 +615,12 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div className="mt-5 flex justify-end">
+                  <div className="mt-5 flex justify-stretch sm:justify-end">
                     <Button
                       type="button"
                       disabled={profileSaving}
                       onClick={() => void saveProfile()}
+                      className="w-full sm:w-auto"
                     >
                       {profileSaving ? t("common_please_wait") : t("account_save_profile")}
                     </Button>
@@ -653,12 +654,12 @@ export default function SettingsPage() {
                       <input value={timeZone} onChange={(e) => setTimeZone(e.target.value)} className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-900" />
                     </div>
                   </div>
-                  <div className="mt-5 flex justify-end">
+                  <div className="mt-5 flex justify-stretch sm:justify-end">
                     <button
                       type="button"
                       disabled={profileSaving}
                       onClick={() => void saveProfile()}
-                      className="rounded-2xl bg-blue-600 px-6 py-3 font-black text-white transition hover:bg-blue-700 disabled:opacity-60"
+                      className="w-full rounded-2xl bg-blue-600 px-6 py-3 font-black text-white transition hover:bg-blue-700 disabled:opacity-60 sm:w-auto"
                     >
                       {profileSaving ? t("common_please_wait") : t("account_save_preferences")}
                     </button>

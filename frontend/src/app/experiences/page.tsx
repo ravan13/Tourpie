@@ -1275,8 +1275,8 @@ export default function ExperiencesPage() {
         )}
 
         {showComposer ? (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-md" role="dialog" aria-modal="true">
-            <div className="w-full max-w-2xl overflow-hidden rounded-[2.5rem] border border-white/70 bg-white shadow-[0_36px_90px_rgba(15,23,42,0.18)]">
+          <div className="tp-motion-modal-backdrop fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-md" role="dialog" aria-modal="true">
+            <div className="tp-motion-modal-panel w-full max-w-2xl overflow-hidden rounded-[2.5rem] border border-white/70 bg-white shadow-[0_36px_90px_rgba(15,23,42,0.18)]">
               <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-8 py-6">
                 <div>
                   <div className="text-xl font-black text-slate-950">{t("exp_share_experience")}</div>

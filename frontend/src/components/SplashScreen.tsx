@@ -186,6 +186,7 @@ export function SplashScreen({ progress = 0.12, exiting = false, entered = true,
         "fixed inset-0 z-[1000] flex items-center justify-center",
         "tp-splash-gradient text-white",
         "transition-[opacity,transform] duration-700 ease-out will-change-transform",
+        exiting ? "pointer-events-none" : "pointer-events-auto",
         entered ? "opacity-100 scale-100" : "opacity-0 scale-[0.99]",
         exiting ? "opacity-0 scale-[0.985]" : "",
       ].join(" ")}
@@ -308,6 +309,9 @@ export default function SplashGate({ children }: { children: React.ReactNode }) 
       window.setTimeout(() => {
         if (readyRef.current) return;
         readyRef.current = true;
+        try {
+          document.documentElement.dataset.tourpieReady = "1";
+        } catch {}
         setProgress(1);
         setExiting(true);
         window.setTimeout(() => setHidden(true), 720);
@@ -320,12 +324,19 @@ export default function SplashGate({ children }: { children: React.ReactNode }) 
       return;
     }
 
+    if (document.readyState === "complete") {
+      complete();
+      return;
+    }
+
     const onReady = () => complete();
     window.addEventListener("tourpie:app-ready", onReady);
+    window.addEventListener("load", onReady);
 
     const fallback = window.setTimeout(() => complete(), 10000);
     return () => {
       window.removeEventListener("tourpie:app-ready", onReady);
+      window.removeEventListener("load", onReady);
       window.clearTimeout(fallback);
     };
   }, [hidden]);

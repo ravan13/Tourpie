@@ -37,7 +37,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
     <div
       ref={ref}
       className={joinClasses(
-        "rounded-[2rem] border transition-[transform,box-shadow,background-color,border-color] duration-200",
+        "rounded-[2rem] border motion-safe:transition-[transform,box-shadow,background-color,border-color] motion-safe:duration-300 motion-safe:ease-out motion-safe:hover:-translate-y-[2px] motion-safe:hover:shadow-[0_22px_54px_rgba(15,23,42,0.12)] motion-reduce:transition-none",
         variantClasses[variant],
         paddingClasses[padding],
         className

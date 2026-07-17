@@ -86,23 +86,24 @@ export default function NotificationsPage() {
         </div>
 
         {loading ? (
-          <div className="py-12 text-center font-bold text-gray-500">{t("common_loading")}</div>
+          <div className="tp-motion-fade-up py-12 text-center font-bold text-gray-500">{t("common_loading")}</div>
         ) : items.length === 0 ? (
-          <div className="py-12 text-center">
+          <div className="tp-motion-fade-up py-12 text-center">
             <div className="text-6xl">🔔</div>
             <div className="mt-4 text-xl font-black text-gray-900">{t("dash_notifications_empty_title")}</div>
             <div className="mt-2 text-gray-500 font-medium">{t("dash_notifications_empty_subtitle")}</div>
           </div>
         ) : (
           <div className="space-y-3">
-            {items.map((n) => {
+            {items.map((n, index) => {
               const display = formatNotification(n);
               return (
                 <div
                   key={n.id}
-                  className={`rounded-[2rem] border p-6 transition ${
+                  className={`tp-motion-notification rounded-[2rem] border p-6 transition ${
                     n.is_read ? "bg-white border-gray-100" : "bg-blue-50 border-blue-100"
                   }`}
+                  style={{ animationDelay: `${Math.min(index * 50, 220)}ms` }}
                 >
                   <div className="flex items-start justify-between gap-6">
                     <div>

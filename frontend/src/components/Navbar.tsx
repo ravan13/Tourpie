@@ -1000,7 +1000,7 @@ export default function Navbar() {
       </div>
 
       {isOpen && (
-        <div className="animate-[navbar-drawer-in_220ms_ease-out] max-h-[calc(100vh-5rem)] overflow-y-auto border-t border-gray-100 bg-white/95 backdrop-blur-xl lg:hidden">
+        <div className="tp-motion-drawer max-h-[calc(100vh-5rem)] overflow-y-auto border-t border-gray-100 bg-white/95 backdrop-blur-xl lg:hidden">
           <div className="px-4 py-4 space-y-2">
             {navItems.map((item) => (
               <Link
@@ -1264,8 +1264,8 @@ export default function Navbar() {
       ) : null}
 
       {sessionWarningOpen ? (
-        <div className="fixed inset-0 z-[120] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-[2.5rem] border border-gray-100 shadow-2xl p-8">
+        <div className="tp-motion-modal-backdrop fixed inset-0 z-[120] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="tp-motion-modal-panel w-full max-w-md bg-white rounded-[2.5rem] border border-gray-100 shadow-2xl p-8">
             <div className="text-xl font-black text-gray-900">{t("session_timeout_warning_title")}</div>
             <div className="mt-3 text-gray-600 font-medium">
               {t("session_timeout_warning_body", { seconds: sessionCountdownSec })}
@@ -1307,17 +1307,6 @@ export default function Navbar() {
           to {
             opacity: 1;
             transform: translateY(0) scale(1);
-          }
-        }
-
-        @keyframes navbar-drawer-in {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
           }
         }
       `}</style>

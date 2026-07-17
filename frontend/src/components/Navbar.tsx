@@ -135,6 +135,12 @@ export default function Navbar() {
     }
   };
 
+  const closeNavigationPanels = () => {
+    setPrefsOpen(false);
+    setProfileOpen(false);
+    setMobilePrefsOpen(false);
+  };
+
   useEffect(() => {
     sessionWarningOpenRef.current = sessionWarningOpen;
   }, [sessionWarningOpen]);
@@ -224,6 +230,16 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      closeNavigationPanels();
+      setIsOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   const handleLogout = async () => {
     const roleValue = getRoleFromToken();
     try {
@@ -246,7 +262,6 @@ export default function Navbar() {
   const homeHref = effectiveRole === "admin" ? "/admin" : effectiveRole === "agency" ? "/agency" : "/dashboard";
   const settingsHref =
     effectiveRole === "admin" ? "/admin/settings" : effectiveRole === "agency" ? "/agency/settings" : "/dashboard/settings";
-  const notificationsHref = effectiveRole === "user" ? "/dashboard/notifications" : null;
 
   const roleText = t(effectiveRole === "agency" ? "role_agency" : effectiveRole === "admin" ? "role_admin" : "role_user");
   const rolePillClass =
@@ -627,26 +642,72 @@ export default function Navbar() {
     { value: "tr", label: t("language_name_tr") },
   ];
   const currencyOptions: Currency[] = ["USD", "EUR", "AZN", "RUB", "TRY"];
+  const navLinkClass = (active: boolean) =>
+    `relative rounded-[1.05rem] px-4 py-2.5 text-sm font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+      active
+        ? "bg-blue-600 text-white shadow-[0_14px_28px_rgba(37,99,235,0.22)]"
+        : "text-gray-700 hover:bg-blue-50/90 hover:text-blue-700 hover:shadow-[0_12px_24px_rgba(15,23,42,0.06)]"
+    }`;
+  const drawerNavLinkClass = (active: boolean) =>
+    `relative block rounded-[1.2rem] px-4 py-3 font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+      active
+        ? "bg-blue-600 text-white shadow-[0_14px_28px_rgba(37,99,235,0.22)]"
+        : "bg-gray-50 text-gray-700 hover:bg-blue-50 hover:text-blue-700 hover:shadow-[0_10px_18px_rgba(15,23,42,0.05)]"
+    }`;
+  const controlPillClass =
+    "inline-flex h-11 items-center gap-2 rounded-[1.1rem] border border-white/75 bg-white/80 px-3 text-gray-700 shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition-all duration-200 hover:border-blue-100 hover:bg-white hover:text-gray-900 hover:shadow-[0_16px_30px_rgba(15,23,42,0.09)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
+  const popoverPanelClass =
+    "animate-[navbar-panel-in_180ms_ease-out] rounded-[1.7rem] border border-white/75 bg-white/92 p-3 shadow-[0_24px_54px_rgba(15,23,42,0.12)] backdrop-blur-xl";
+  const selectionItemClass = (active: boolean) =>
+    `flex w-full items-center justify-between gap-3 rounded-[1.1rem] px-3 py-3 text-left text-sm font-black transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+      active
+        ? "bg-blue-600 text-white shadow-[0_14px_28px_rgba(37,99,235,0.2)]"
+        : "bg-gray-50 text-gray-700 hover:bg-blue-50 hover:text-blue-700 hover:shadow-[0_12px_24px_rgba(15,23,42,0.06)]"
+    }`;
+  const currencyItemClass = (active: boolean) =>
+    `rounded-[0.95rem] px-3 py-2 text-xs font-black transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+      active
+        ? "bg-blue-600 text-white shadow-[0_12px_24px_rgba(37,99,235,0.18)]"
+        : "bg-gray-50 text-gray-700 hover:bg-blue-50 hover:text-blue-700 hover:shadow-[0_10px_18px_rgba(15,23,42,0.05)]"
+    }`;
+  const accountShellClass =
+    "inline-flex items-stretch overflow-hidden rounded-[1.2rem] border border-white/75 bg-white/82 shadow-[0_12px_28px_rgba(15,23,42,0.08)] transition-all duration-200 hover:border-blue-100 hover:shadow-[0_18px_36px_rgba(15,23,42,0.1)]";
+  const accountLinkClass =
+    "inline-flex items-center gap-3 px-3 py-2.5 hover:bg-blue-50/90 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
+  const accountToggleClass =
+    "px-2.5 text-gray-500 transition-all duration-200 hover:bg-blue-50/90 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
+  const menuPanelClass =
+    "animate-[navbar-panel-in_180ms_ease-out] rounded-[1.8rem] border border-white/75 bg-white/92 p-2 shadow-[0_24px_54px_rgba(15,23,42,0.14)] backdrop-blur-xl";
+  const menuActionClass =
+    "block w-full rounded-[1rem] px-4 py-3 text-left text-sm font-black text-gray-900 transition-all duration-200 hover:bg-blue-50/90 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
+  const menuMutedActionClass =
+    "w-full rounded-[1rem] px-4 py-3 text-left text-sm font-black text-gray-900 transition-all duration-200 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
+  const menuLogoutClass =
+    "w-full rounded-[1rem] px-4 py-3 text-left text-sm font-black text-gray-700 transition-all duration-200 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
+  const secondaryCtaClass =
+    "rounded-[1.1rem] border border-white/80 bg-white/84 px-5 py-3 text-sm font-bold text-gray-900 shadow-[0_10px_22px_rgba(15,23,42,0.05)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-100 hover:bg-blue-50 hover:text-blue-700 hover:shadow-[0_16px_28px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
+  const primaryCtaClass =
+    "rounded-[1.1rem] bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-[0_14px_28px_rgba(37,99,235,0.24)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-[0_18px_34px_rgba(37,99,235,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
 
   return (
-    <nav className="bg-white/90 backdrop-blur-xl border-b border-gray-100 sticky top-0 z-50">
+    <nav className="sticky top-0 z-[1080] border-b border-white/70 bg-white/84 shadow-[0_18px_40px_rgba(15,23,42,0.07)] backdrop-blur-xl">
       {previewBackup && getRoleFromToken() !== "admin" ? (
-        <div className="bg-amber-50 border-b border-amber-100">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-4">
+        <div className="border-b border-amber-100 bg-amber-50/92">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
             <div className="text-sm font-black text-amber-900">{t("preview_mode_title")}</div>
             <button
               type="button"
               onClick={exitPreview}
-              className="bg-white border border-amber-200 hover:bg-amber-50 text-amber-900 font-black px-4 py-2 rounded-2xl transition"
+              className="rounded-2xl border border-amber-200 bg-white px-4 py-2 font-black text-amber-900 shadow-[0_12px_24px_rgba(245,158,11,0.12)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-amber-50 hover:shadow-[0_16px_30px_rgba(245,158,11,0.16)]"
             >
               {t("preview_mode_exit")}
             </button>
           </div>
         </div>
       ) : null}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-20">
-          <div className="flex items-center">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-20 items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center">
             <Logo />
             <div className="hidden lg:ml-10 lg:flex lg:items-center lg:gap-2">
               {navItems.map((item) => (
@@ -654,11 +715,7 @@ export default function Navbar() {
                   key={item.href}
                   href={item.href}
                   prefetch={false}
-                  className={`relative px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                    isActive(item.href)
-                      ? "bg-blue-600 text-white shadow-sm shadow-blue-200"
-                      : "text-gray-700 hover:text-blue-700 hover:bg-blue-50"
-                  }`}
+                  className={navLinkClass(isActive(item.href))}
                 >
                   {item.label}
                   {item.live ? (
@@ -671,22 +728,32 @@ export default function Navbar() {
               ))}
             </div>
           </div>
-          <div className="hidden sm:ml-6 sm:flex sm:items-center gap-6">
+          <div className="hidden lg:ml-6 lg:flex lg:items-center lg:gap-4">
             <div className="relative" ref={prefsRef}>
               <button
                 type="button"
                 aria-label={t("nav_language_currency")}
-                onClick={() => setPrefsOpen((v) => !v)}
-                className="inline-flex items-center gap-2 h-11 rounded-2xl bg-gray-50 border border-gray-100 text-gray-700 hover:bg-white hover:border-gray-200 hover:text-gray-900 px-3 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                onClick={() => {
+                  setPrefsOpen((v) => !v);
+                  setProfileOpen(false);
+                }}
+                className={controlPillClass}
               >
                 <LanguageFlag language={language} />
                 <span className="text-sm font-black text-gray-900">{languageOptions.find((opt) => opt.value === language)?.label}</span>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                  className={`transition-transform duration-200 ${prefsOpen ? "rotate-180" : ""}`}
+                >
                   <path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
               {prefsOpen ? (
-                <div className="absolute right-0 mt-3 w-72 bg-white rounded-[1.6rem] border border-gray-100 shadow-xl p-3">
+                <div className={`${popoverPanelClass} absolute right-0 mt-3 w-72`}>
                   <div className="grid gap-2">
                     {languageOptions.map((opt) => (
                       <button
@@ -696,9 +763,7 @@ export default function Navbar() {
                           handleLanguageChange(opt.value);
                           setPrefsOpen(false);
                         }}
-                        className={`w-full px-3 py-3 rounded-2xl text-sm font-black text-left transition flex items-center justify-between gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                          language === opt.value ? "bg-blue-600 text-white shadow-sm shadow-blue-200" : "bg-gray-50 text-gray-700 hover:bg-blue-50 hover:text-blue-700 hover:scale-[1.01]"
-                        }`}
+                        className={selectionItemClass(language === opt.value)}
                       >
                         <span className="inline-flex items-center gap-3">
                           <LanguageFlag language={opt.value} />
@@ -708,7 +773,7 @@ export default function Navbar() {
                       </button>
                     ))}
                   </div>
-                  <div className="h-px bg-gray-100 my-3" />
+                  <div className="my-3 h-px bg-gray-100" />
                   <div className="grid grid-cols-3 gap-2">
                     {currencyOptions.map((c) => (
                       <button
@@ -718,9 +783,7 @@ export default function Navbar() {
                           handleCurrencyChange(c);
                           setPrefsOpen(false);
                         }}
-                        className={`px-3 py-2 rounded-xl text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                          currency === c ? "bg-blue-600 text-white" : "bg-gray-50 text-gray-700 hover:bg-blue-50 hover:text-blue-700"
-                        }`}
+                        className={currencyItemClass(currency === c)}
                       >
                         {c}
                       </button>
@@ -730,14 +793,14 @@ export default function Navbar() {
               ) : null}
             </div>
 
-            <div className="flex-shrink-0 flex gap-4">
+            <div className="flex flex-shrink-0 items-center gap-3 xl:gap-4">
               {!authReady ? (
                 <div className="h-10 w-[220px]" />
               ) : (
                 <>
                   {isLoggedIn ? (
                     <div className="relative" ref={profileRef}>
-                        <div className="inline-flex items-stretch rounded-2xl bg-white border border-gray-200 shadow-sm overflow-hidden hover:border-blue-200 transition">
+                        <div className={accountShellClass}>
                         <Link
                           href={homeHref}
                           prefetch={false}
@@ -745,7 +808,7 @@ export default function Navbar() {
                             setProfileOpen(false);
                             setPrefsOpen(false);
                           }}
-                          className="inline-flex items-center gap-3 px-3 py-2 hover:bg-blue-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                          className={accountLinkClass}
                           aria-label={t("nav_dashboard")}
                         >
                           <div className="relative h-9 w-9 rounded-full overflow-hidden border border-white shadow-sm flex-shrink-0">
@@ -779,7 +842,7 @@ export default function Navbar() {
                             setProfileOpen((v) => !v);
                             setPrefsOpen(false);
                           }}
-                          className="px-2 text-gray-500 hover:text-gray-900 hover:bg-blue-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                          className={accountToggleClass}
                           aria-label="Account menu"
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -789,8 +852,8 @@ export default function Navbar() {
                       </div>
 
                       {profileOpen ? (
-                        <div className="absolute right-0 mt-3 w-72 bg-white rounded-[1.7rem] border border-gray-100 shadow-xl p-2">
-                          <div className="rounded-[1.3rem] bg-gray-50 border border-gray-100 px-4 py-4 mb-2">
+                        <div className={`${menuPanelClass} absolute right-0 mt-3 w-72`}>
+                          <div className="mb-2 rounded-[1.35rem] border border-gray-100 bg-gray-50/92 px-4 py-4">
                             <div className="flex items-start gap-3">
                               <div className="relative h-12 w-12 rounded-full overflow-hidden border border-white shadow-sm flex-shrink-0">
                                 {avatarUrl && !avatarBroken ? (
@@ -814,7 +877,7 @@ export default function Navbar() {
                             href={homeHref}
                             prefetch={false}
                             onClick={() => setProfileOpen(false)}
-                            className="block px-4 py-3 rounded-xl font-black text-sm text-gray-900 hover:bg-blue-50 hover:text-blue-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                            className={menuActionClass}
                           >
                             {t("nav_dashboard")}
                           </Link>
@@ -822,26 +885,16 @@ export default function Navbar() {
                             href={settingsHref}
                             prefetch={false}
                             onClick={() => setProfileOpen(false)}
-                            className="block px-4 py-3 rounded-xl font-black text-sm text-gray-900 hover:bg-blue-50 hover:text-blue-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                            className={menuActionClass}
                           >
                             {t("dash_settings")}
                           </Link>
-                          {notificationsHref ? (
-                            <Link
-                              href={notificationsHref}
-                              prefetch={false}
-                              onClick={() => setProfileOpen(false)}
-                              className="block px-4 py-3 rounded-xl font-black text-sm text-gray-900 hover:bg-blue-50 hover:text-blue-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                            >
-                              {t("dash_notifications")}
-                            </Link>
-                          ) : null}
                           {!emailStatusVerified ? (
                             <Link
                               href={settingsHref}
                               prefetch={false}
                               onClick={() => setProfileOpen(false)}
-                              className="block px-4 py-3 rounded-xl font-black text-sm text-amber-700 hover:bg-amber-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                              className="block rounded-[1rem] px-4 py-3 text-sm font-black text-amber-700 transition-all duration-200 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                             >
                               {t("account_verify_email")}
                             </Link>
@@ -852,7 +905,7 @@ export default function Navbar() {
                               setProfileOpen(false);
                               avatarInputRef.current?.click();
                             }}
-                            className="w-full text-left px-4 py-3 rounded-xl font-black text-sm text-gray-900 hover:bg-blue-50 hover:text-blue-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                            className={menuActionClass}
                           >
                             {effectiveRole === "agency" ? t("nav_upload_logo") : t("nav_upload_photo")}
                           </button>
@@ -862,14 +915,14 @@ export default function Navbar() {
                               clearAvatar();
                               setProfileOpen(false);
                             }}
-                            className="w-full text-left px-4 py-3 rounded-xl font-black text-sm text-gray-900 hover:bg-gray-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                            className={menuMutedActionClass}
                           >
                             {t("common_remove")}
                           </button>
-                          <div className="h-px bg-gray-100 my-2" />
+                          <div className="my-2 h-px bg-gray-100" />
                           <button
                             onClick={() => void handleLogout()}
-                            className="w-full text-left px-4 py-3 rounded-xl font-black text-sm text-gray-700 hover:bg-gray-100 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                            className={menuLogoutClass}
                           >
                             {t("nav_logout")}
                           </button>
@@ -881,14 +934,14 @@ export default function Navbar() {
                       <Link
                         href="/agency/register"
                         prefetch={false}
-                        className="bg-white border border-gray-200 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 text-gray-900 font-bold py-2 px-5 rounded-xl transition duration-200 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        className={secondaryCtaClass}
                       >
                         {t("agency_register_cta")}
                       </Link>
                       <Link
                         href="/login"
                         prefetch={false}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-xl transition duration-200 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        className={primaryCtaClass}
                       >
                         {t("nav_login")}
                       </Link>
@@ -898,14 +951,14 @@ export default function Navbar() {
               )}
             </div>
           </div>
-          <div className="-mr-2 flex items-center sm:hidden">
+          <div className="flex items-center justify-end lg:hidden">
             <button
               onClick={() => {
                 setMobilePrefsOpen(false);
                 setProfileOpen(false);
                 setIsOpen(!isOpen);
               }}
-              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-[1rem] text-gray-400 transition-all duration-200 hover:bg-blue-50/90 hover:text-blue-700 hover:shadow-[0_10px_22px_rgba(15,23,42,0.06)] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
             >
               <span className="sr-only">{t("nav_open_menu")}</span>
               {isOpen ? (
@@ -947,7 +1000,7 @@ export default function Navbar() {
       </div>
 
       {isOpen && (
-        <div className="lg:hidden border-t border-gray-100 bg-white/95 backdrop-blur-xl">
+        <div className="animate-[navbar-drawer-in_220ms_ease-out] max-h-[calc(100vh-5rem)] overflow-y-auto border-t border-gray-100 bg-white/95 backdrop-blur-xl lg:hidden">
           <div className="px-4 py-4 space-y-2">
             {navItems.map((item) => (
               <Link
@@ -955,11 +1008,7 @@ export default function Navbar() {
                 href={item.href}
                 prefetch={false}
                 onClick={() => setIsOpen(false)}
-                className={`relative block px-4 py-3 rounded-2xl font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                  isActive(item.href)
-                    ? "bg-blue-600 text-white shadow-sm shadow-blue-200"
-                    : "bg-gray-50 text-gray-700 hover:bg-blue-50 hover:text-blue-700"
-                }`}
+                className={drawerNavLinkClass(isActive(item.href))}
               >
                 {item.label}
                 {item.live ? (
@@ -971,23 +1020,33 @@ export default function Navbar() {
               </Link>
             ))}
           </div>
-          <div className="px-4 pb-6 pt-2 border-t border-gray-100">
-            <div className="flex items-center justify-between gap-3">
-              <div className="relative">
+          <div className="border-t border-gray-100 px-4 pb-6 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="relative z-20">
                 <button
                   type="button"
-                  onClick={() => setMobilePrefsOpen((v) => !v)}
-                  className="inline-flex items-center gap-2 h-11 rounded-2xl bg-gray-50 border border-gray-100 text-gray-700 hover:bg-white hover:border-gray-200 hover:text-gray-900 px-3 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  onClick={() => {
+                    setMobilePrefsOpen((v) => !v);
+                    setProfileOpen(false);
+                  }}
+                  className={controlPillClass}
                   aria-label={t("nav_language_currency")}
                 >
                   <LanguageFlag language={language} />
                   <span className="text-sm font-black text-gray-900">{languageOptions.find((opt) => opt.value === language)?.label}</span>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                    className={`transition-transform duration-200 ${mobilePrefsOpen ? "rotate-180" : ""}`}
+                  >
                     <path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
                 {mobilePrefsOpen ? (
-                  <div className="absolute left-0 top-full mt-3 w-72 bg-white rounded-[1.6rem] border border-gray-100 shadow-xl p-3">
+                  <div className={`${popoverPanelClass} absolute bottom-full left-0 z-30 mb-3 w-72 max-w-[calc(100vw-2rem)]`}>
                     <div className="grid gap-2">
                       {languageOptions.map((lang) => (
                         <button
@@ -997,9 +1056,7 @@ export default function Navbar() {
                             handleLanguageChange(lang.value);
                             setMobilePrefsOpen(false);
                           }}
-                          className={`w-full px-3 py-3 rounded-2xl text-sm font-black transition flex items-center justify-between gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                            language === lang.value ? "bg-blue-600 text-white shadow-sm shadow-blue-200" : "bg-gray-50 text-gray-700 hover:bg-blue-50 hover:text-blue-700"
-                          }`}
+                          className={selectionItemClass(language === lang.value)}
                         >
                           <span className="inline-flex items-center gap-3">
                             <LanguageFlag language={lang.value} />
@@ -1009,7 +1066,7 @@ export default function Navbar() {
                         </button>
                       ))}
                     </div>
-                    <div className="h-px bg-gray-100 my-3" />
+                    <div className="my-3 h-px bg-gray-100" />
                     <div className="grid grid-cols-5 gap-2">
                       {currencyOptions.map((c) => (
                         <button
@@ -1019,9 +1076,7 @@ export default function Navbar() {
                           handleCurrencyChange(c);
                             setMobilePrefsOpen(false);
                           }}
-                          className={`px-2 py-2 rounded-xl text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                            currency === c ? "bg-blue-600 text-white" : "bg-gray-50 text-gray-700 hover:bg-blue-50 hover:text-blue-700"
-                          }`}
+                          className={currencyItemClass(currency === c)}
                         >
                           {c}
                         </button>
@@ -1031,8 +1086,8 @@ export default function Navbar() {
                 ) : null}
               </div>
               {isLoggedIn ? (
-                <div className="relative" ref={profileRef}>
-                  <div className="inline-flex items-stretch rounded-2xl bg-white border border-gray-200 shadow-sm overflow-hidden hover:border-blue-200 transition">
+                <div className="relative z-20 w-full sm:w-auto" ref={profileRef}>
+                  <div className={accountShellClass}>
                     <Link
                       href={homeHref}
                       prefetch={false}
@@ -1041,16 +1096,16 @@ export default function Navbar() {
                         setProfileOpen(false);
                         setMobilePrefsOpen(false);
                       }}
-                      className="inline-flex items-center gap-3 px-3 py-2 hover:bg-blue-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      className={accountLinkClass}
                       aria-label={t("nav_dashboard")}
                     >
-                      <div className="relative h-10 w-10 rounded-full overflow-hidden border border-white shadow-sm flex-shrink-0">
+                      <div className="relative h-9 w-9 rounded-full overflow-hidden border border-white shadow-sm flex-shrink-0">
                         {avatarUrl && !avatarBroken ? (
                           <NextImage
                             src={avatarUrl}
                             alt={identityName}
                             fill
-                            sizes="40px"
+                            sizes="36px"
                             className="object-cover"
                             onError={() => setAvatarBroken(true)}
                           />
@@ -1063,7 +1118,7 @@ export default function Navbar() {
                         )}
                       </div>
                       <div className="flex flex-col items-start leading-tight">
-                        <div className="max-w-[140px] truncate text-sm font-black text-gray-900">{identityName}</div>
+                        <div className="max-w-[160px] truncate text-sm font-black text-gray-900">{identityName}</div>
                         <div className={`mt-0.5 inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${rolePillClass}`}>
                           {roleText}
                         </div>
@@ -1075,7 +1130,7 @@ export default function Navbar() {
                         setProfileOpen((v) => !v);
                         setMobilePrefsOpen(false);
                       }}
-                      className="px-2 text-gray-500 hover:text-gray-900 hover:bg-blue-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      className={accountToggleClass}
                       aria-label="Account menu"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1085,8 +1140,8 @@ export default function Navbar() {
                   </div>
 
                   {profileOpen ? (
-                  <div className="absolute right-0 mt-3 w-72 bg-white rounded-[1.7rem] border border-gray-100 shadow-xl p-2">
-                      <div className="rounded-[1.3rem] bg-gray-50 border border-gray-100 px-4 py-4 mb-2">
+                  <div className={`${menuPanelClass} absolute bottom-full right-0 z-30 mb-3 w-full sm:w-72 sm:max-w-[calc(100vw-2rem)]`}>
+                      <div className="mb-2 rounded-[1.35rem] border border-gray-100 bg-gray-50/92 px-4 py-4">
                         <div className="flex items-start gap-3">
                           <div className="relative h-12 w-12 rounded-full overflow-hidden border border-white shadow-sm flex-shrink-0">
                             {avatarUrl && !avatarBroken ? (
@@ -1106,6 +1161,7 @@ export default function Navbar() {
                           </div>
                         </div>
                       </div>
+                      <div className="space-y-1">
                       <Link
                         href={homeHref}
                         prefetch={false}
@@ -1113,7 +1169,7 @@ export default function Navbar() {
                           setProfileOpen(false);
                           setIsOpen(false);
                         }}
-                        className="block px-4 py-3 rounded-xl font-black text-sm text-gray-900 hover:bg-blue-50 hover:text-blue-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        className={menuActionClass}
                       >
                         {t("nav_dashboard")}
                       </Link>
@@ -1124,23 +1180,10 @@ export default function Navbar() {
                           setProfileOpen(false);
                           setIsOpen(false);
                         }}
-                        className="block px-4 py-3 rounded-xl font-black text-sm text-gray-900 hover:bg-blue-50 hover:text-blue-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        className={menuActionClass}
                       >
                         {t("dash_settings")}
                       </Link>
-                      {notificationsHref ? (
-                        <Link
-                          href={notificationsHref}
-                          prefetch={false}
-                          onClick={() => {
-                            setProfileOpen(false);
-                            setIsOpen(false);
-                          }}
-                          className="block px-4 py-3 rounded-xl font-black text-sm text-gray-900 hover:bg-blue-50 hover:text-blue-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                        >
-                          {t("dash_notifications")}
-                        </Link>
-                      ) : null}
                       {!emailStatusVerified ? (
                         <Link
                           href={settingsHref}
@@ -1149,7 +1192,7 @@ export default function Navbar() {
                             setProfileOpen(false);
                             setIsOpen(false);
                           }}
-                          className="block px-4 py-3 rounded-xl font-black text-sm text-amber-700 hover:bg-amber-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                          className="block rounded-[1rem] px-4 py-3 text-sm font-black text-amber-700 transition-all duration-200 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                         >
                           {t("account_verify_email")}
                         </Link>
@@ -1160,7 +1203,7 @@ export default function Navbar() {
                           setProfileOpen(false);
                           avatarInputRef.current?.click();
                         }}
-                        className="w-full text-left px-4 py-3 rounded-xl font-black text-sm text-gray-900 hover:bg-blue-50 hover:text-blue-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        className={menuActionClass}
                       >
                         {effectiveRole === "agency" ? t("nav_upload_logo") : t("nav_upload_photo")}
                       </button>
@@ -1170,17 +1213,18 @@ export default function Navbar() {
                           clearAvatar();
                           setProfileOpen(false);
                         }}
-                        className="w-full text-left px-4 py-3 rounded-xl font-black text-sm text-gray-900 hover:bg-gray-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        className={menuMutedActionClass}
                       >
                         {t("common_remove")}
                       </button>
-                      <div className="h-px bg-gray-100 my-2" />
+                      <div className="my-2 h-px bg-gray-100" />
                       <button
                         onClick={handleLogout}
-                        className="w-full text-left px-4 py-3 rounded-xl font-black text-sm text-gray-700 hover:bg-gray-100 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        className={menuLogoutClass}
                       >
                         {t("nav_logout")}
                       </button>
+                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -1190,7 +1234,7 @@ export default function Navbar() {
                     href="/agency/register"
                     prefetch={false}
                     onClick={() => setIsOpen(false)}
-                    className="bg-white border border-gray-200 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 text-gray-900 font-bold py-3 px-5 rounded-2xl transition duration-200 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                    className={secondaryCtaClass}
                   >
                     {t("agency_register_cta")}
                   </Link>
@@ -1198,7 +1242,7 @@ export default function Navbar() {
                     href="/login"
                     prefetch={false}
                     onClick={() => setIsOpen(false)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-5 rounded-2xl transition duration-200 text-sm shadow-sm shadow-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                    className={primaryCtaClass}
                   >
                     {t("nav_login")}
                   </Link>
@@ -1254,6 +1298,29 @@ export default function Navbar() {
           </div>
         </div>
       ) : null}
+      <style jsx>{`
+        @keyframes navbar-panel-in {
+          from {
+            opacity: 0;
+            transform: translateY(-8px) scale(0.98);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes navbar-drawer-in {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </nav>
   );
 }

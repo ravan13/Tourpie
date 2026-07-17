@@ -16,7 +16,10 @@ function TravelLoader({ progress }: { progress: number }) {
   const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100);
 
   return (
-    <div className="mt-8 w-full max-w-[420px]">
+    <div className="mt-8 w-full max-w-[440px]">
+      <div className="tp-loader-progress-meta">
+        <span className="tp-loader-progress-value">{pct}%</span>
+      </div>
       <div className="tp-loader-progress-track">
         <div className="tp-loader-progress-fill" style={{ width: `${pct}%` }} aria-hidden="true" />
       </div>
@@ -26,7 +29,7 @@ function TravelLoader({ progress }: { progress: number }) {
 
 function WorldMapBackdrop() {
   return (
-    <div className="absolute inset-0 opacity-[0.08]">
+    <div className="absolute inset-0 opacity-[0.11]">
       <svg className="tp-loader-map absolute inset-0 h-full w-full" viewBox="0 0 1200 700" fill="none" aria-hidden="true">
         <defs>
           <linearGradient id="tpMapStroke" x1="0" y1="0" x2="1200" y2="700" gradientUnits="userSpaceOnUse">
@@ -121,37 +124,48 @@ function OrbitProgress({ progress }: { progress: number }) {
   );
 }
 
-function OrbitPlane() {
+function FlightPath() {
   return (
-    <div className="tp-loader-orbit">
-      <div className="tp-loader-orbit-rot">
-        <div className="tp-loader-orbit-plane">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M21.9 11.1 3.8 3.3c-.9-.38-1.76.48-1.38 1.38l2.92 6.82 7.2 1.2-7.2 1.2-2.92 6.82c-.38.9.48 1.76 1.38 1.38l18.1-7.8a1.2 1.2 0 0 0 0-2.2Z"
-              fill="white"
-              opacity="0.92"
-            />
-          </svg>
-        </div>
-      </div>
+    <div className="mt-8 w-full max-w-[460px]" aria-hidden="true">
+      <svg className="tp-loader-flight-path h-[54px] w-full" viewBox="0 0 460 54" fill="none">
+        <path
+          d="M8 36 C 78 12, 130 12, 192 26 S 310 48, 452 18"
+          stroke="rgba(255,255,255,0.2)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeDasharray="2 10"
+        />
+        <path
+          d="M8 36 C 78 12, 130 12, 192 26 S 310 48, 452 18"
+          stroke="url(#tpFlightPathGradient)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray="2 10"
+          className="tp-loader-flight-route"
+        />
+        <defs>
+          <linearGradient id="tpFlightPathGradient" x1="8" y1="36" x2="452" y2="18" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#A8D8FF" stopOpacity="0.75" />
+            <stop offset="0.52" stopColor="#FFFFFF" stopOpacity="0.88" />
+            <stop offset="1" stopColor="#FF6A1A" stopOpacity="0.88" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div className="tp-loader-flight-glow" />
     </div>
   );
 }
 
 function Sparkles() {
   const items = [
-    { left: "12%", top: "18%", size: 6, delay: "0s" },
-    { left: "22%", top: "72%", size: 5, delay: "0.8s" },
-    { left: "34%", top: "40%", size: 4, delay: "1.4s" },
-    { left: "58%", top: "22%", size: 6, delay: "1.1s" },
-    { left: "72%", top: "56%", size: 5, delay: "0.4s" },
-    { left: "86%", top: "30%", size: 4, delay: "1.8s" },
-    { left: "78%", top: "78%", size: 6, delay: "2.1s" },
-    { left: "16%", top: "44%", size: 4, delay: "2.4s" },
+    { left: "16%", top: "22%", size: 5, delay: "0s" },
+    { left: "30%", top: "68%", size: 4, delay: "1.2s" },
+    { left: "66%", top: "24%", size: 5, delay: "0.8s" },
+    { left: "82%", top: "62%", size: 4, delay: "1.7s" },
+    { left: "52%", top: "78%", size: 5, delay: "2.2s" },
   ];
   return (
-    <div className="absolute inset-0 opacity-[0.1] pointer-events-none">
+    <div className="absolute inset-0 opacity-[0.07] pointer-events-none">
       {items.map((s) => (
         <span
           key={`${s.left}-${s.top}`}
@@ -190,22 +204,38 @@ export function SplashScreen({ progress = 0.12, exiting = false, entered = true,
       </div>
 
       <div className="relative w-full px-6">
-        <div className="mx-auto max-w-[560px] rounded-[28px] sm:rounded-[34px] bg-white/8 border border-white/12 shadow-[0_22px_70px_rgba(2,42,107,0.34)] backdrop-blur-xl px-7 sm:px-10 py-10 sm:py-12">
+        <div className="tp-loader-card mx-auto max-w-[580px] rounded-[28px] px-7 py-10 sm:rounded-[34px] sm:px-10 sm:py-12">
           <div className="flex flex-col items-center text-center">
+            <div className="tp-loader-chip">
+              <span className="tp-loader-chip-dot" />
+              {t("common_loading")}
+            </div>
+
             <div className="relative">
               <OrbitProgress progress={progress} />
-              <OrbitPlane />
+              <div className="tp-loader-logo-halo" aria-hidden="true" />
               <div className="tp-loader-logo relative h-[92px] w-[92px] sm:h-[108px] sm:w-[108px] rounded-[26px] sm:rounded-[30px] bg-white/10 border border-white/15 shadow-[0_14px_42px_rgba(0,0,0,0.18)] mx-auto">
                 <Image src="/tourpie_icon.svg" alt="TourPie" fill priority sizes="108px" className="object-contain p-4" />
               </div>
             </div>
 
+            <div className="mt-6">
+              <div className="tp-loader-wordmark">
+                <span className="text-white">Tour</span>
+                <span className="text-[#FFB27A]">Pie</span>
+              </div>
+              <p className="tp-loader-subtitle mt-2">{t("brand_tagline")}</p>
+            </div>
+
+            <FlightPath />
             <TravelLoader progress={progress} />
 
-            <div className="tp-loader-text mt-6 text-sm sm:text-[0.96rem] font-semibold tracking-[-0.01em] text-white/80">
-              <span key={messageKey || "default"} className="tp-loader-text-swap">
-                {message || t("global_loader_message")}
-              </span>
+            <div className="tp-loader-message-panel">
+              <div className="tp-loader-text text-sm sm:text-[0.96rem] font-semibold tracking-[-0.01em] text-white/88">
+                <span key={messageKey || "default"} className="tp-loader-text-swap">
+                  {message || t("global_loader_message")}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -272,7 +302,7 @@ export default function SplashGate({ children }: { children: React.ReactNode }) 
 
     const complete = () => {
       if (readyRef.current) return;
-      const MIN_DURATION_MS = 2400;
+      const MIN_DURATION_MS = 2000;
       const elapsed = Date.now() - startRef.current;
       const delay = Math.max(0, MIN_DURATION_MS - elapsed);
       window.setTimeout(() => {

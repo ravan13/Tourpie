@@ -76,7 +76,9 @@ async function handle(request: NextRequest, context: { params: Promise<{ path: s
   }
 }
 
-export function GET(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+export function GET(request: NextRequest, context: { params: Promise<{ path: string[] }> }) 
+{
+  console.log("API ROUTE HIT");
   return handle(request, context);
 }
 

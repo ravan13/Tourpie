@@ -34,6 +34,9 @@ async function proxyToBackend(request: Request, path: string, body: ArrayBuffer 
   const dest = new URL(`${base}/${path}`);
   dest.search = url.search;
 
+  console.log("BACKEND_BASE_URL:", BACKEND_BASE_URL);
+  console.log("DESTINATION:", dest.toString());
+  
   const init: RequestInit = {
     method: request.method,
     headers: filterProxyHeaders(request.headers),

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+/*import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
@@ -96,4 +96,21 @@ export function PATCH(request: NextRequest, context: { params: Promise<{ path: s
 
 export function DELETE(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return handle(request, context);
+}*/ 
+
+import { NextRequest, NextResponse } from "next/server";
+
+export const runtime = "nodejs";
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  const { path } = await params;
+
+  return NextResponse.json({
+    ok: true,
+    path,
+    url: request.url,
+  });
 }

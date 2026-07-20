@@ -1,6 +1,6 @@
-/*const API_BASE_URL = "/api";*/
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
+const API_BASE_URL = "/api"; 
+/*const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";*/
 
 const SESSION_TOKEN_STORAGE_KEY = "token";
 const SESSION_REMEMBER_KEY = "tourpie:remember_me";
@@ -930,7 +930,7 @@ export const api = {
   packages: {
     count: (): Promise<{ total: number }> => fetchApi(`/packages/count`),
     getAll: (skip = 0, limit = 100): Promise<Package[]> => 
-      fetchApi(`/packages?skip=${skip}&limit=${limit}`),
+      fetchApi(`/packages/?skip=${skip}&limit=${limit}`),
     listMyAgency: (params: {
       skip?: number;
       limit?: number;
@@ -1119,7 +1119,7 @@ export const api = {
   },
   agencies: {
     count: (): Promise<{ total: number }> => fetchApi(`/agencies/count`),
-    getAll: (skip = 0, limit = 100): Promise<Agency[]> => fetchApi(`/agencies?skip=${skip}&limit=${limit}`),
+    getAll: (skip = 0, limit = 100): Promise<Agency[]> => fetchApi(`/agencies/?skip=${skip}&limit=${limit}`),
     getOne: (id: number): Promise<Agency> => fetchApi(`/agencies/${id}`),
     update: (id: number, data: Partial<Agency>): Promise<Agency> =>
       fetchApi(`/agencies/${id}`, { method: "PUT", body: JSON.stringify(data) }),

@@ -73,7 +73,7 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  async rewrites() {
+  /*async rewrites() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
   if (!apiUrl) {
@@ -86,7 +86,7 @@ const nextConfig: NextConfig = {
       destination: `${apiUrl}/:path*`,
     },
   ];
-},
+},*/
 
   async headers() {
     const base = [

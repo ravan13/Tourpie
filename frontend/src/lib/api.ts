@@ -1,4 +1,6 @@
-const API_BASE_URL = "/api";
+/*const API_BASE_URL = "/api";*/
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
 
 const SESSION_TOKEN_STORAGE_KEY = "token";
 const SESSION_REMEMBER_KEY = "tourpie:remember_me";

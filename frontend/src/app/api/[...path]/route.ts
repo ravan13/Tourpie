@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
-
+console.log("BACKEND_BASE_URL =", BACKEND_BASE_URL);
 function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
 }

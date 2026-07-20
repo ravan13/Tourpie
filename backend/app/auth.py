@@ -12,7 +12,9 @@ import base64
 import urllib.parse
 import urllib.request
 import json
+import resend
 from pathlib import Path
+from urllib.error import HTTPError
 
 # Workaround for passlib + bcrypt 4.0.0+ compatibility issue
 # https://github.com/pyca/bcrypt/issues/684
@@ -108,21 +110,20 @@ def send_email_with_meta(to_email: str, subject: str, body: str) -> dict:
         if not RESEND_API_KEY or not (RESEND_FROM or SMTP_FROM):
             raise RuntimeError("Email service is not configured")
         from_value = (RESEND_FROM or SMTP_FROM or "").strip()
-        url = "https://api.resend.com/emails"
-        payload = json.dumps(
-            {"from": from_value, "to": [to_addr], "subject": subj, "text": content},
-            ensure_ascii=False,
-        ).encode("utf-8")
-        req = urllib.request.Request(url, data=payload, method="POST")
-        req.add_header("Authorization", f"Bearer {RESEND_API_KEY}")
-        req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req, timeout=12) as res:
-            raw = res.read().decode("utf-8", errors="replace")
-            try:
-                parsed = json.loads(raw)
-            except Exception:
-                parsed = {"raw": raw}
-            return {"provider": "resend", "status": "sent", "response": parsed}
+        resend.api_key = RESEND_API_KEY
+
+        response = resend.Emails.send({
+            "from": from_value,
+            "to": [to_addr],
+            "subject": subj,
+            "html": content,
+        })
+
+        return {
+            "provider": "resend",
+            "status": "sent",
+            "response": response,
+        }
 
     if not SMTP_HOST or not SMTP_FROM:
         raise RuntimeError("Email service is not configured")

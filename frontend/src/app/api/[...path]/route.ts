@@ -1,4 +1,4 @@
-/*import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
@@ -31,10 +31,15 @@ function filterProxyHeaders(input: Headers) {
 async function proxyToBackend(request: Request, path: string, body: ArrayBuffer | undefined) {
   const url = new URL(request.url);
   const base = BACKEND_BASE_URL.replace(/\/+$/g, "");
-  const dest = new URL(`${base}/${path}`);
+
+  const normalizedPath = path.endsWith("/") ? path : `${path}/`;
+  const dest = new URL(`${base}/${normalizedPath}`);
+
   dest.search = url.search;
 
+  console.log("REQUEST URL:", request.url);
   console.log("BACKEND_BASE_URL:", BACKEND_BASE_URL);
+  console.log("PATH:", path);
   console.log("DESTINATION:", dest.toString());
   
   const init: RequestInit = {
@@ -96,21 +101,4 @@ export function PATCH(request: NextRequest, context: { params: Promise<{ path: s
 
 export function DELETE(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return handle(request, context);
-}*/ 
-
-import { NextRequest, NextResponse } from "next/server";
-
-export const runtime = "nodejs";
-
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  const { path } = await params;
-
-  return NextResponse.json({
-    ok: true,
-    path,
-    url: request.url,
-  });
 }

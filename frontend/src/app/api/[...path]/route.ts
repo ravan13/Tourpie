@@ -53,7 +53,9 @@ async function proxyToBackend(request: Request, path: string, body: ArrayBuffer 
 
   const res = await fetch(dest.toString(), init);
 
+  console.log("DESTINATION:", dest.toString()); 
   console.log("STATUS:", res.status);
+  console.log("BODY:", await res.clone().text());
   console.log("LOCATION:", res.headers.get("location"));
  
   const contentType = res.headers.get("content-type") || "";

@@ -32,8 +32,8 @@ async function proxyToBackend(request: Request, path: string, body: ArrayBuffer 
   const url = new URL(request.url);
   const base = BACKEND_BASE_URL.replace(/\/+$/g, "");
 
-  const normalizedPath = path.endsWith("/") ? path : `${path}/`;
-  const dest = new URL(`${base}/${normalizedPath}`);
+  /*const normalizedPath = path.endsWith("/") ? path : `${path}/`;*/
+  const dest = new URL(`${base}/${path}`);
 
   dest.search = url.search;
 
@@ -52,6 +52,10 @@ async function proxyToBackend(request: Request, path: string, body: ArrayBuffer 
   }
 
   const res = await fetch(dest.toString(), init);
+
+  console.log("STATUS:", res.status);
+  console.log("LOCATION:", res.headers.get("location"));
+ 
   const contentType = res.headers.get("content-type") || "";
 
   if (contentType.includes("application/json")) {
@@ -70,15 +74,17 @@ async function handle(request: NextRequest, context: { params: Promise<{ path: s
 
   try {
     return await proxyToBackend(request, path, body);
-  } catch {
-    return json(
-      {
-        detail: "Backend service is unavailable.",
-        error: "backend_unavailable",
-      },
-      503
-    );
-  }
+  } catch (err) {
+  console.error("PROXY ERROR:", err);
+
+  return json(
+    {
+      detail: err instanceof Error ? err.message : String(err),
+      error: "backend_unavailable",
+    },
+    503
+  );
+}
 }
 
 export function GET(request: NextRequest, context: { params: Promise<{ path: string[] }> }) 

@@ -3,7 +3,6 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import datetime
-import os
 
 from . import auth, database, models
 
@@ -16,13 +15,6 @@ def get_current_user(
     db: Session = Depends(database.get_db),
 ) -> models.User:
     payload = auth.decode_access_token(token)
-    if os.getenv("AUTH_DEBUG_USERS", "").strip() == "1":
-        try:
-            auth_header = request.headers.get("authorization")
-            print("AUTH_HEADER:", auth_header)
-        except Exception:
-            print("AUTH_HEADER:", None)
-        print("JWT_PAYLOAD:", payload)
     if not payload or not payload.get("sub"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     sub = str(payload["sub"]).strip().lower()

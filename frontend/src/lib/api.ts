@@ -315,14 +315,6 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}) {
     }
   }
 
-  if (typeof window !== "undefined") {
-    const debugAuth = (process.env.NEXT_PUBLIC_DEBUG_AUTH || "").trim() === "1";
-    if (debugAuth && endpoint.startsWith("/users")) {
-      console.log("USERS_REQUEST_TOKEN", attachedToken);
-      console.log("USERS_REQUEST_HEADERS", headers);
-    }
-  }
-
   try {
     const url = `${API_BASE_URL}${endpoint}`;
     const res = await fetch(url, {
@@ -1474,4 +1466,3 @@ export const api = {
       }),
   },
 };
-

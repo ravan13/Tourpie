@@ -10,3 +10,15 @@ debug-login-redirect-qa.md
 
 # TypeScript
 *.tsbuildinfo
+
+# Environment
+.env
+.env.*
+
+# Python virtual environment
+.venv/
+backend/.venv/
+venv/
+
+# Node
+node_modules/

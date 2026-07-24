@@ -357,6 +357,22 @@ CurrencyCode = Literal["AZN", "USD", "EUR", "RUB", "TRY"]
 PricingMode = Literal["auto", "manual"]
 PackageStatus = Literal["draft", "active", "expired", "archived"]
 
+
+def _coerce_string_list(value) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return []
+        try:
+            value = json.loads(raw)
+        except Exception:
+            return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if isinstance(item, str) and str(item).strip()]
+    return []
+
 class PackageBase(BaseModel):
     title: str
     description: Optional[str] = None
@@ -382,6 +398,11 @@ class PackageBase(BaseModel):
     end_date: Optional[date] = None
     agency_id: int
 
+    @field_validator("highlights", mode="before")
+    @classmethod
+    def _parse_highlights(cls, v):
+        return _coerce_string_list(v)
+
 class PackageCreate(PackageBase):
     pass
 
@@ -406,6 +427,11 @@ class Package(PackageBase):
             except Exception:
                 return None
         return None
+
+    @field_validator("highlights", mode="before")
+    @classmethod
+    def _serialize_highlights(cls, v):
+        return _coerce_string_list(v)
 
     class Config:
         from_attributes = True

@@ -79,11 +79,7 @@ def generate_otp_code(length: int = 6) -> str:
 
 def _log_delivery(message: str) -> None:
     try:
-        print(message)
-    except Exception:
-        pass
-    try:
-        logging.getLogger(__name__).warning("%s", message)
+        logging.getLogger(__name__).debug("Delivery debug event occurred.")
     except Exception:
         return
 

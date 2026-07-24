@@ -3,7 +3,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .routers import users, packages, bookings, agencies, recommendations, favorites, messages, notifications, community, blog, moderation, trip_marketplace
 from sqlalchemy import text
-import os
+from sqlalchemy.orm import Session
+from .database import SessionLocal
+from .models import User, UserRole
+from .auth import get_password_hash
+from contextlib import asynccontextmanager
+import logging
+import os 
+from dotenv import load_dotenv
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+env_file = BASE_DIR / ".env"
+
+load_dotenv(env_file, override=True)
+load_dotenv(BASE_DIR / ".env", override=True)
+load_dotenv(env_file, override=True)
 
 _env_name = (os.getenv("TOURPIE_ENV") or os.getenv("ENVIRONMENT") or os.getenv("ENV") or "development").strip().lower()
 _is_prod = _env_name in ("prod", "production")
@@ -52,7 +67,53 @@ def _ensure_columns():
 if _auto_schema:
     _ensure_columns()
 
-app = FastAPI(title="TourPie - Travel Marketplace API")
+def create_default_admin():
+    db: Session = SessionLocal()
+
+    try:
+        email = os.getenv("DEFAULT_ADMIN_EMAIL")
+        password = os.getenv("DEFAULT_ADMIN_PASSWORD")
+        full_name = os.getenv("DEFAULT_ADMIN_NAME", "Administrator")
+
+        if not email or not password:
+            logging.getLogger(__name__).warning("Default admin credentials are not configured.")
+            return
+
+        admin = (
+            db.query(User)
+            .filter(text("LOWER(email) = LOWER(:email)"))
+            .params(email=email)
+            .first()
+        )
+
+        if admin:
+            logging.getLogger(__name__).info("Default admin already exists.")
+            return
+
+        admin = User(
+            email=email,
+            hashed_password=get_password_hash(password),
+            full_name=full_name,
+            role=UserRole.ADMIN,
+            is_verified=True,
+            is_email_verified=True,
+        )
+
+        db.add(admin)
+        db.commit()
+        db.refresh(admin)
+
+        logging.getLogger(__name__).info("Default admin created.")
+
+    finally:
+        db.close()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    create_default_admin()
+    yield
+
+app = FastAPI(title="TourPie - Travel Marketplace API", lifespan=lifespan,)
 
 def _parse_cors_origins() -> list[str]:
     raw = (os.getenv("CORS_ORIGINS") or os.getenv("TOURPIE_CORS_ORIGINS") or "").strip()

@@ -268,12 +268,6 @@ def _consume_rate_limit(
         start = now
         c = 0
     if c >= max_count:
-        print("429_TRIGGERED")
-        print("FILE:", __file__)
-        print("FUNCTION:", "_consume_rate_limit")
-        print("EMAIL:", email)
-        print("REASON:", error_detail)
-        print("DETAILS:", {"count": c, "max_count": max_count, "window_seconds": window_seconds, "window_start": str(start), "now": str(now)})
         raise HTTPException(status_code=429, detail=error_detail)
     return start, c + 1
 
@@ -509,22 +503,6 @@ def list_users(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(database.get_db),
 ):
-    if os.getenv("AUTH_DEBUG_USERS", "").strip() == "1":
-        print("USERS_ENDPOINT_CALLED")
-        try:
-            auth_header = request.headers.get("authorization")
-            print("AUTH_HEADER:", auth_header)
-        except Exception:
-            print("AUTH_HEADER:", None)
-        try:
-            print("CURRENT_USER:", getattr(current_user, "email", None))
-        except Exception:
-            print("CURRENT_USER:", None)
-        try:
-            print("CURRENT_ROLE:", getattr(current_user, "role", None))
-        except Exception:
-            print("CURRENT_ROLE:", None)
-
     role_value = current_user.role.value if hasattr(current_user.role, "value") else current_user.role
     if role_value != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
@@ -722,12 +700,6 @@ def request_verification(payload: schemas.UserRequestVerification, db: Session =
     cooldown_seconds = max(1, OTP_RESEND_COOLDOWN_SECONDS)
     delta_seconds = (now - sent_at).total_seconds() if sent_at else None
     if sent_at and delta_seconds is not None and 0 <= delta_seconds < cooldown_seconds:
-        print("429_TRIGGERED")
-        print("FILE:", __file__)
-        print("FUNCTION:", "request_verification")
-        print("EMAIL:", email)
-        print("REASON:", "cooldown")
-        print("DETAILS:", {"now": str(now), "sent_at": str(sent_at), "delta_seconds": delta_seconds, "cooldown_seconds": cooldown_seconds})
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
     window_start, window_count = _consume_rate_limit(
@@ -798,12 +770,6 @@ def request_phone_verification(payload: schemas.UserRequestPhoneVerification, db
     cooldown_seconds = max(1, OTP_RESEND_COOLDOWN_SECONDS)
     delta_seconds = (now - sent_at).total_seconds() if sent_at else None
     if sent_at and delta_seconds is not None and 0 <= delta_seconds < cooldown_seconds:
-        print("429_TRIGGERED")
-        print("FILE:", __file__)
-        print("FUNCTION:", "request_phone_verification")
-        print("EMAIL:", email)
-        print("REASON:", "cooldown")
-        print("DETAILS:", {"now": str(now), "sent_at": str(sent_at), "delta_seconds": delta_seconds, "cooldown_seconds": cooldown_seconds})
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
     window_start, window_count = _consume_rate_limit(
         now=now,
@@ -1004,13 +970,14 @@ def request_email_change(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    new_email = _normalize_email(str(body.new_email))
-    if new_email == _normalize_email(user.email):
+    current_email = _normalize_email(getattr(current_user, "email", None) or user.email)
+    requested_email = _normalize_email(str(body.new_email))
+    if requested_email == current_email:
         raise HTTPException(status_code=400, detail="New email must be different")
 
     existing = (
         db.query(models.User)
-        .filter(func.lower(models.User.email) == new_email, models.User.id != user.id)
+        .filter(func.lower(models.User.email) == requested_email, models.User.id != user.id)
         .first()
     )
     if existing:
@@ -1029,12 +996,12 @@ def request_email_change(
         window_seconds=60 * 60,
         max_count=5,
         error_detail="Too many email change requests. Please try again later.",
-        email=new_email,
+        email=requested_email,
     )
 
     link_token = _generate_email_link_token()
     expires_hours = max(1, EMAIL_CHANGE_LINK_EXPIRE_HOURS)
-    user.pending_email = new_email
+    user.pending_email = requested_email
     user.email_change_token_hash = auth.get_password_hash(link_token)
     user.email_change_token_expires_at = now + td(hours=expires_hours)
     user.email_change_sent_at = now
@@ -1044,10 +1011,10 @@ def request_email_change(
 
     lang = _normalize_lang(getattr(body, "language", None) or getattr(user, "preferred_language", None))
     confirm_link = _build_frontend_url("/auth/email-action", {"mode": "confirm-email-change", "token": link_token})
-    subject, email_body = _email_change_email(lang, new_email, confirm_link, expires_hours)
-    _send_email_or_raise(db, user.id, "email_change_confirm", new_email, subject, email_body)
+    subject, email_body = _email_change_email(lang, requested_email, confirm_link, expires_hours)
+    _send_email_or_raise(db, user.id, "email_change_confirm", requested_email, subject, email_body)
     try:
-        old_subject, old_body = _email_change_notice_old_email(lang, new_email)
+        old_subject, old_body = _email_change_notice_old_email(lang, requested_email)
         _send_email_or_raise(db, user.id, "email_change_notice_old", user.email, old_subject, old_body)
     except HTTPException:
         pass
@@ -1150,9 +1117,12 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
 def admin_login_start(payload: schemas.AdminLoginStartRequest, db: Session = Depends(database.get_db)):
     email = _normalize_email(str(payload.email))
     user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
-    if not user or not auth.verify_password(payload.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
+    if not user or not auth.verify_password(payload.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password"
+        )
     role_value = user.role.value if hasattr(user.role, "value") else user.role
     if role_value != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
@@ -1161,12 +1131,6 @@ def admin_login_start(payload: schemas.AdminLoginStartRequest, db: Session = Dep
     sent_at = _as_utc(getattr(user, "admin_2fa_sent_at", None))
     delta_seconds = (now - sent_at).total_seconds() if sent_at else None
     if sent_at and delta_seconds is not None and 0 <= delta_seconds < 30:
-        print("429_TRIGGERED")
-        print("FILE:", __file__)
-        print("FUNCTION:", "admin_login_start")
-        print("EMAIL:", email)
-        print("REASON:", "cooldown")
-        print("DETAILS:", {"now": str(now), "sent_at": str(sent_at), "delta_seconds": delta_seconds, "cooldown_seconds": 30})
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
     window_start, window_count = _consume_rate_limit(
@@ -1293,12 +1257,6 @@ def forgot_password(payload: schemas.ForgotPasswordRequest, db: Session = Depend
     sent_at = _as_utc(getattr(user, "password_reset_sent_at", None))
     delta_seconds = (now - sent_at).total_seconds() if sent_at else None
     if sent_at and delta_seconds is not None and 0 <= delta_seconds < 60:
-        print("429_TRIGGERED")
-        print("FILE:", __file__)
-        print("FUNCTION:", "forgot_password")
-        print("EMAIL:", email)
-        print("REASON:", "cooldown")
-        print("DETAILS:", {"now": str(now), "sent_at": str(sent_at), "delta_seconds": delta_seconds, "cooldown_seconds": 60})
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
     window_start, window_count = _consume_rate_limit(
@@ -1336,12 +1294,6 @@ def forgot_password_phone(payload: schemas.ForgotPasswordByPhoneRequest, db: Ses
     sent_at = _as_utc(getattr(user, "password_reset_sent_at", None))
     delta_seconds = (now - sent_at).total_seconds() if sent_at else None
     if sent_at and delta_seconds is not None and 0 <= delta_seconds < 60:
-        print("429_TRIGGERED")
-        print("FILE:", __file__)
-        print("FUNCTION:", "forgot_password_phone")
-        print("EMAIL:", f"phone:{phone}")
-        print("REASON:", "cooldown")
-        print("DETAILS:", {"now": str(now), "sent_at": str(sent_at), "delta_seconds": delta_seconds, "cooldown_seconds": 60})
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
     window_start, window_count = _consume_rate_limit(

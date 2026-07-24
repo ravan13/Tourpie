@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
-console.log("BACKEND_BASE_URL =", BACKEND_BASE_URL);
 function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
 }
@@ -20,6 +19,7 @@ function filterProxyHeaders(input: Headers) {
     "upgrade",
     "host",
     "content-length",
+    "expect",
   ]);
   const headers = new Headers();
   input.forEach((value, key) => {
@@ -28,19 +28,22 @@ function filterProxyHeaders(input: Headers) {
   return headers;
 }
 
+function filterResponseHeaders(input: Headers) {
+  const blocked = new Set(["content-length", "content-encoding", "transfer-encoding", "connection"]);
+  const headers = new Headers();
+  input.forEach((value, key) => {
+    if (!blocked.has(key.toLowerCase())) headers.append(key, value);
+  });
+  return headers;
+}
+
 async function proxyToBackend(request: Request, path: string, body: ArrayBuffer | undefined) {
   const url = new URL(request.url);
   const base = BACKEND_BASE_URL.replace(/\/+$/g, "");
-
-  /*const normalizedPath = path.endsWith("/") ? path : `${path}/`;*/
-  const dest = new URL(`${base}/${path}`);
+  const normalizedPath = path.replace(/^\/+|\/+$/g, "");
+  const dest = new URL(normalizedPath ? `${base}/${normalizedPath}` : `${base}/`);
 
   dest.search = url.search;
-
-  console.log("REQUEST URL:", request.url);
-  console.log("BACKEND_BASE_URL:", BACKEND_BASE_URL);
-  console.log("PATH:", path);
-  console.log("DESTINATION:", dest.toString());
   
   const init: RequestInit = {
     method: request.method,
@@ -52,21 +55,9 @@ async function proxyToBackend(request: Request, path: string, body: ArrayBuffer 
   }
 
   const res = await fetch(dest.toString(), init);
-
-  console.log("DESTINATION:", dest.toString()); 
-  console.log("STATUS:", res.status);
-  console.log("BODY:", await res.clone().text());
-  console.log("LOCATION:", res.headers.get("location"));
- 
-  const contentType = res.headers.get("content-type") || "";
-
-  if (contentType.includes("application/json")) {
-    const body = await res.json().catch(() => ({}));
-    return NextResponse.json(body, { status: res.status });
-  }
-
-  const text = await res.text();
-  return new NextResponse(text, { status: res.status, headers: { "content-type": contentType || "text/plain" } });
+  const responseHeaders = filterResponseHeaders(res.headers);
+  const responseBody = await res.arrayBuffer();
+  return new NextResponse(responseBody, { status: res.status, headers: responseHeaders });
 }
 
 async function handle(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
@@ -78,6 +69,11 @@ async function handle(request: NextRequest, context: { params: Promise<{ path: s
     return await proxyToBackend(request, path, body);
   } catch (err) {
   console.error("PROXY ERROR:", err);
+
+  if (err instanceof Error) {
+    console.error(err.stack);
+    console.error(err.cause);
+  }
 
   return json(
     {
@@ -91,7 +87,6 @@ async function handle(request: NextRequest, context: { params: Promise<{ path: s
 
 export function GET(request: NextRequest, context: { params: Promise<{ path: string[] }> }) 
 {
-  console.log("API ROUTE HIT");
   return handle(request, context);
 }
 

@@ -205,6 +205,27 @@ def _normalize_prices(value) -> dict[str, float] | None:
         out[code] = float(n)
     return out
 
+
+def _coerce_string_list(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return []
+        try:
+            value = json.loads(raw)
+        except Exception:
+            # Backward compatibility for legacy plain-text values.
+            return [raw]
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if isinstance(item, str) and str(item).strip()]
+    return []
+
+
+def _serialize_text_list(value) -> str:
+    return json.dumps(_coerce_string_list(value))
+
 def _resolve_unit_price(pkg, currency: str | None) -> float:
     requested = _normalize_currency(currency) or _normalize_currency(getattr(pkg, "base_currency", None)) or "USD"
     base_currency = _normalize_currency(getattr(pkg, "base_currency", None)) or "USD"
@@ -220,24 +241,38 @@ def _resolve_unit_price(pkg, currency: str | None) -> float:
             return float(_convert_amount(base_manual, base_currency, requested))
     return float(_convert_amount(base_price, base_currency, requested))
 
+#def format_package(pkg):
+  #  if pkg.images and isinstance(pkg.images, str):
+  #      try:
+  #          pkg.images = json.loads(pkg.images)
+  #      except json.JSONDecodeError:
+  #          pkg.images = []
+  #  if pkg.highlights and isinstance(pkg.highlights, str):
+  #      try:
+  #          pkg.highlights = json.loads(pkg.highlights)
+  #      except json.JSONDecodeError:
+  #          pkg.highlights = [] 
+  #  if getattr(pkg, "prices", None) and isinstance(pkg.prices, str):
+  #      try:
+  #          parsed = json.loads(pkg.prices)
+  #         pkg.prices = parsed if isinstance(parsed, dict) else None
+  #      except json.JSONDecodeError:
+  #          pkg.prices = None
+  #  return pkg 
+    
 def format_package(pkg):
-    if pkg.images and isinstance(pkg.images, str):
-        try:
-            pkg.images = json.loads(pkg.images)
-        except json.JSONDecodeError:
-            pkg.images = []
-    if pkg.highlights and isinstance(pkg.highlights, str):
-        try:
-            pkg.highlights = json.loads(pkg.highlights)
-        except json.JSONDecodeError:
-            pkg.highlights = []
+    pkg.images = _coerce_string_list(getattr(pkg, "images", None))
+    pkg.highlights = _coerce_string_list(getattr(pkg, "highlights", None))
+
     if getattr(pkg, "prices", None) and isinstance(pkg.prices, str):
         try:
             parsed = json.loads(pkg.prices)
             pkg.prices = parsed if isinstance(parsed, dict) else None
         except json.JSONDecodeError:
             pkg.prices = None
+
     return pkg
+
 
 @router.get("/", response_model=List[schemas.Package])
 def get_packages(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db)):
@@ -726,8 +761,8 @@ def duplicate_package(
         start_date=body.start_date or getattr(src, "start_date", None),
         end_date=body.end_date or getattr(src, "end_date", None),
         image_url=src.image_url,
-        images=src.images,
-        highlights=src.highlights,
+        images=_serialize_text_list(getattr(src, "images", None)),
+        highlights=_serialize_text_list(getattr(src, "highlights", None)),
         category=src.category,
         agency_id=src.agency_id,
         created_at=_now_utc(),
@@ -762,10 +797,8 @@ def create_package(
         pkg_data["agency_id"] = user.agency_id
     elif not pkg_data.get("agency_id"):
         raise HTTPException(status_code=400, detail="agency_id is required")
-    if pkg_data.get("images"):
-        pkg_data["images"] = json.dumps(pkg_data["images"])
-    if pkg_data.get("highlights"):
-        pkg_data["highlights"] = json.dumps(pkg_data["highlights"])
+    pkg_data["images"] = _serialize_text_list(pkg_data.get("images"))
+    pkg_data["highlights"] = _serialize_text_list(pkg_data.get("highlights"))
 
     desired_status = _normalize_status(pkg_data.get("status"))
     pkg_data["status"] = desired_status
@@ -804,6 +837,7 @@ def create_package(
     db.add(db_package)
     db.commit()
     db.refresh(db_package)
+    
     _log_status_change(db, db_package.id, None, _normalize_status(getattr(db_package, "status", None)), "created", user.id)
     db.commit()
     return format_package(db_package)
@@ -831,10 +865,8 @@ def update_package(
     pkg_data = package.model_dump()
     if role_value == "agency":
         pkg_data["agency_id"] = db_package.agency_id
-    if pkg_data.get("images"):
-        pkg_data["images"] = json.dumps(pkg_data["images"])
-    if pkg_data.get("highlights"):
-        pkg_data["highlights"] = json.dumps(pkg_data["highlights"])
+    pkg_data["images"] = _serialize_text_list(pkg_data.get("images"))
+    pkg_data["highlights"] = _serialize_text_list(pkg_data.get("highlights"))
 
     old_status = _normalize_status(getattr(db_package, "status", None))
     new_status = _normalize_status(pkg_data.get("status"))

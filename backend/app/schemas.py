@@ -669,59 +669,141 @@ class ModerationUserBanRequest(BaseModel):
     duration_days: Optional[int] = None
 
 class TripRequestCreateRequest(BaseModel):
-    destination: str
+    destination: Optional[str] = None
     destination_type: Literal["any", "country", "city"] = "any"
+    country: Optional[str] = None
+    city: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     flexible_dates: bool = False
+    duration: Optional[int] = None
     adults: int = 1
     children: int = 0
-    ideal_budget: float
+    ideal_budget: Optional[float] = None
     max_budget: Optional[float] = None
+    budget: Optional[float] = None
+    currency: Optional[str] = None
     budget_currency: str = "USD"
     budget_flexibility: Literal["fixed", "flexible_10", "flexible_20", "no_budget_limit"] = "fixed"
     hotel_stars: Optional[int] = None
     meal_type: Optional[str] = None
+    meal_preference: Optional[str] = None
+    transportation: Optional[str] = None
     flight_included: bool = False
     transfer_included: bool = False
     visa_assistance: bool = False
+    visa_required: bool = False
     travel_insurance: bool = False
+    travel_style: Optional[str] = None
     preferred_airline: Optional[str] = None
     accommodation_preferences: Optional[str] = None
     activities_interests: Optional[str] = None
     special_notes: Optional[str] = None
+    special_requirements: Optional[str] = None
+    notes: Optional[str] = None
+    attachments: Optional[List[str]] = None
     offer_expiration_hours: Literal[24, 48, 72] = 48
+    save_as_draft: bool = False
+
+class TripRequestUpdateRequest(BaseModel):
+    destination: Optional[str] = None
+    destination_type: Optional[Literal["any", "country", "city"]] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    flexible_dates: Optional[bool] = None
+    duration: Optional[int] = None
+    adults: Optional[int] = None
+    children: Optional[int] = None
+    ideal_budget: Optional[float] = None
+    max_budget: Optional[float] = None
+    budget: Optional[float] = None
+    currency: Optional[str] = None
+    budget_currency: Optional[str] = None
+    budget_flexibility: Optional[Literal["fixed", "flexible_10", "flexible_20", "no_budget_limit"]] = None
+    hotel_stars: Optional[int] = None
+    meal_type: Optional[str] = None
+    meal_preference: Optional[str] = None
+    transportation: Optional[str] = None
+    flight_included: Optional[bool] = None
+    transfer_included: Optional[bool] = None
+    visa_assistance: Optional[bool] = None
+    visa_required: Optional[bool] = None
+    travel_insurance: Optional[bool] = None
+    travel_style: Optional[str] = None
+    preferred_airline: Optional[str] = None
+    accommodation_preferences: Optional[str] = None
+    activities_interests: Optional[str] = None
+    special_notes: Optional[str] = None
+    special_requirements: Optional[str] = None
+    notes: Optional[str] = None
+    attachments: Optional[List[str]] = None
+    offer_expiration_hours: Optional[Literal[24, 48, 72]] = None
+    submit: Optional[bool] = None
 
 class TripRequest(BaseModel):
     id: int
     request_code: str
     user_id: int
-    destination: str
+    destination: Optional[str] = None
     destination_type: str
+    country: Optional[str] = None
+    city: Optional[str] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     flexible_dates: bool
+    duration: Optional[int] = None
     adults: int
     children: int
-    ideal_budget: float
+    ideal_budget: Optional[float] = None
     max_budget: Optional[float] = None
+    budget: Optional[float] = None
+    currency: Optional[str] = None
     budget_currency: str
     budget_flexibility: str
     hotel_stars: Optional[int] = None
     meal_type: Optional[str] = None
+    meal_preference: Optional[str] = None
+    transportation: Optional[str] = None
     flight_included: bool
     transfer_included: bool
     visa_assistance: bool
+    visa_required: bool
     travel_insurance: bool
+    travel_style: Optional[str] = None
     preferred_airline: Optional[str] = None
     accommodation_preferences: Optional[str] = None
     activities_interests: Optional[str] = None
     special_notes: Optional[str] = None
+    special_requirements: Optional[str] = None
+    notes: Optional[str] = None
+    attachments: Optional[List[str]] = None
     offer_expiration_hours: int
-    expires_at: datetime
+    expires_at: Optional[datetime] = None
     status: str
+    submitted_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    offers_count: int = 0
+    matches_count: int = 0
+
+    @field_validator("attachments", mode="before")
+    @classmethod
+    def _parse_attachments(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, list):
+            return [x for x in v if isinstance(x, str)]
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [x for x in parsed if isinstance(x, str)]
+            except Exception:
+                return None
+        return None
 
     class Config:
         from_attributes = True
@@ -732,68 +814,397 @@ class TripRequestAgencyMatch(BaseModel):
     agency_id: int
     status: str
     declined_reason: Optional[str] = None
+    viewed_at: Optional[datetime] = None
+    interested_at: Optional[datetime] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
 
 class TripOfferCreateRequest(BaseModel):
-    total_price: float
+    total_price: Optional[float] = None
+    price: Optional[float] = None
     currency: str = "USD"
     hotel: Optional[str] = None
+    hotel_stars: Optional[int] = None
     room_type: Optional[str] = None
     meal_plan: Optional[str] = None
+    flight_included: bool = False
+    airport_transfer: bool = False
+    breakfast_included: bool = False
+    lunch_included: bool = False
+    dinner_included: bool = False
     flight: Optional[str] = None
     transfer: Optional[str] = None
     visa: Optional[str] = None
+    visa_support: Optional[str] = None
     insurance: Optional[str] = None
+    travel_program: Optional[str] = None
+    included_services: Optional[str] = None
+    excluded_services: Optional[str] = None
+    offer_attachments: Optional[List[str]] = None
     activities: Optional[str] = None
     offer_description: Optional[str] = None
     additional_benefits: Optional[str] = None
+    notes: Optional[str] = None
+    expiration_date: Optional[str] = None
     offer_expiration_hours: Optional[int] = None
     price_difference_reason: Optional[str] = None
     price_difference_notes: Optional[str] = None
+    is_draft: bool = False
+
+class TripOfferUpdateRequest(BaseModel):
+    total_price: Optional[float] = None
+    price: Optional[float] = None
+    currency: Optional[str] = None
+    hotel: Optional[str] = None
+    hotel_stars: Optional[int] = None
+    room_type: Optional[str] = None
+    meal_plan: Optional[str] = None
+    flight_included: Optional[bool] = None
+    airport_transfer: Optional[bool] = None
+    breakfast_included: Optional[bool] = None
+    lunch_included: Optional[bool] = None
+    dinner_included: Optional[bool] = None
+    flight: Optional[str] = None
+    transfer: Optional[str] = None
+    visa: Optional[str] = None
+    visa_support: Optional[str] = None
+    insurance: Optional[str] = None
+    travel_program: Optional[str] = None
+    included_services: Optional[str] = None
+    excluded_services: Optional[str] = None
+    offer_attachments: Optional[List[str]] = None
+    activities: Optional[str] = None
+    offer_description: Optional[str] = None
+    additional_benefits: Optional[str] = None
+    notes: Optional[str] = None
+    expiration_date: Optional[str] = None
+    offer_expiration_hours: Optional[int] = None
+    price_difference_reason: Optional[str] = None
+    price_difference_notes: Optional[str] = None
+    submit: Optional[bool] = None
 
 class TripOffer(BaseModel):
     id: int
     trip_request_id: int
     agency_id: int
     created_by_user_id: int
-    total_price: float
+    total_price: Optional[float] = None
+    price: Optional[float] = None
     currency: str
     hotel: Optional[str] = None
+    hotel_stars: Optional[int] = None
     room_type: Optional[str] = None
     meal_plan: Optional[str] = None
+    flight_included: bool = False
+    airport_transfer: bool = False
+    breakfast_included: bool = False
+    lunch_included: bool = False
+    dinner_included: bool = False
     flight: Optional[str] = None
     transfer: Optional[str] = None
     visa: Optional[str] = None
+    visa_support: Optional[str] = None
     insurance: Optional[str] = None
+    travel_program: Optional[str] = None
+    included_services: Optional[str] = None
+    excluded_services: Optional[str] = None
+    offer_attachments: Optional[List[str]] = None
     activities: Optional[str] = None
     offer_description: Optional[str] = None
     additional_benefits: Optional[str] = None
+    notes: Optional[str] = None
+    expiration_date: Optional[date] = None
     price_difference_reason: Optional[str] = None
     price_difference_notes: Optional[str] = None
-    expires_at: datetime
+    rating: Optional[float] = None
+    reviews_count: Optional[int] = None
+    response_time_minutes: Optional[int] = None
+    expires_at: Optional[datetime] = None
     status: str
+    is_bookmarked: bool = False
     created_at: datetime
     updated_at: datetime
+    submitted_at: Optional[datetime] = None
     accepted_at: Optional[datetime] = None
     declined_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
+    revision_requested_at: Optional[datetime] = None
+    revision_notes: Optional[str] = None
+
+    @field_validator("offer_attachments", mode="before")
+    @classmethod
+    def _parse_offer_attachments(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, list):
+            return [x for x in v if isinstance(x, str)]
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [x for x in parsed if isinstance(x, str)]
+            except Exception:
+                return None
+        return None
 
     class Config:
         from_attributes = True
 
+class OfferRevisionRequest(BaseModel):
+    notes: Optional[str] = None
+
 class TripBooking(BaseModel):
     id: int
+    booking_code: Optional[str] = None
     trip_request_id: int
     trip_offer_id: int
     user_id: int
     agency_id: int
     status: str
     created_at: datetime
+    accepted_at: Optional[datetime] = None
+    trip_started_at: Optional[datetime] = None
+    trip_completed_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    offer_accepted: Optional[dict] = None
+    agreement: Optional[dict] = None
+    documents_count: Optional[int] = None
+    pending_documents_count: Optional[int] = None
+    payments_count: Optional[int] = None
+    checklist_total: Optional[int] = None
+    checklist_completed: Optional[int] = None
+    review_submitted: Optional[bool] = None
+    request_code: Optional[str] = None
+    destination: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    duration: Optional[int] = None
+    agency_name: Optional[str] = None
+    agency_rating: Optional[float] = None
+    agency_reviews_count: Optional[int] = None
+    total_price: Optional[float] = None
+    currency: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class TripBookingTimelineEvent(BaseModel):
+    id: int
+    booking_id: int
+    event_type: str
+    actor_role: Optional[str] = None
+    actor_user_id: Optional[int] = None
+    actor_display_name: Optional[str] = None
+    note: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TripBookingDocument(BaseModel):
+    id: int
+    booking_id: int
+    uploader_user_id: int
+    document_type: str
+    filename: Optional[str] = None
+    file_url: str
+    status: str
+    note: Optional[str] = None
+    created_at: datetime
+    viewed_at: Optional[datetime] = None
+    reviewed_at: Optional[datetime] = None
+    uploader_display_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TripBookingDocumentCreateRequest(BaseModel):
+    document_type: str = "other"
+    filename: Optional[str] = None
+    file_url: str
+    note: Optional[str] = None
+
+
+class TripBookingDocumentSetStatusRequest(BaseModel):
+    status: str
+
+
+class TripBookingPaymentRecord(BaseModel):
+    id: int
+    booking_id: int
+    status: str
+    payment_method: Optional[str] = None
+    reference_number: Optional[str] = None
+    amount: Optional[float] = None
+    currency: Optional[str] = None
+    payment_date: Optional[datetime] = None
+    note: Optional[str] = None
+    agency_confirmed_at: Optional[datetime] = None
+    customer_confirmed_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TripBookingPaymentUpsertRequest(BaseModel):
+    status: Optional[str] = None
+    payment_method: Optional[str] = None
+    reference_number: Optional[str] = None
+    amount: Optional[float] = None
+    currency: Optional[str] = None
+    payment_date: Optional[str] = None
+    note: Optional[str] = None
+    agency_confirm: Optional[bool] = None
+    customer_confirm: Optional[bool] = None
+
+
+class TripBookingChecklistItem(BaseModel):
+    id: int
+    booking_id: int
+    label: str
+    is_completed: bool
+    is_recommended: bool
+    sort_order: int
+    completed_by_user_id: Optional[int] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TripBookingChecklistUpdateRequest(BaseModel):
+    item_id: int
+    is_completed: Optional[bool] = None
+    is_recommended: Optional[bool] = None
+    label: Optional[str] = None
+
+
+class TripBookingChecklistAddRequest(BaseModel):
+    label: str
+    is_recommended: bool = False
+
+
+class TripBookingMessage(BaseModel):
+    id: int
+    booking_id: int
+    sender_role: str
+    sender_user_id: int
+    content: str
+    attachment_url: Optional[str] = None
+    is_read: bool
+    created_at: datetime
+    sender_display_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TripBookingMessageSendRequest(BaseModel):
+    content: str
+    attachment_url: Optional[str] = None
+
+
+class TripBookingReview(BaseModel):
+    id: int
+    booking_id: int
+    trip_request_id: int
+    user_id: int
+    agency_id: int
+    rating: int
+    comment: Optional[str] = None
+    photos: Optional[List[str]] = None
+    trip_story: Optional[str] = None
+    agency_response: Optional[str] = None
+    agency_response_at: Optional[datetime] = None
+    is_hidden: bool
+    created_at: datetime
+    user_display_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+    @field_validator("photos", mode="before")
+    @classmethod
+    def _normalize_photos(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return [x for x in v if isinstance(x, str)]
+        if isinstance(v, str):
+            try:
+                import json as _j
+                parsed = _j.loads(v)
+                if isinstance(parsed, list):
+                    return [x for x in parsed if isinstance(x, str)]
+            except Exception:
+                return [s for s in v.split(",") if s]
+        return []
+
+
+class TripBookingReviewSubmitRequest(BaseModel):
+    rating: int
+    comment: Optional[str] = None
+    photos: Optional[List[str]] = None
+    trip_story: Optional[str] = None
+
+
+class TripBookingAgencyReviewResponseRequest(BaseModel):
+    agency_response: str
+
+
+class TripBookingStatusUpdateRequest(BaseModel):
+    status: str
+    note: Optional[str] = None
+
+
+class TripBookingSetNotesRequest(BaseModel):
+    notes: Optional[str] = None
+
+
+class TripBookingWorkspace(BaseModel):
+    booking: TripBooking
+    trip_request: Optional[dict] = None
+    trip_offer: Optional[dict] = None
+    timeline: List[TripBookingTimelineEvent]
+    documents: List[TripBookingDocument]
+    payments: List[TripBookingPaymentRecord]
+    checklist: List[TripBookingChecklistItem]
+    messages: List[TripBookingMessage]
+    review: Optional[TripBookingReview] = None
+    agreement_snapshot: Optional[dict] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TripBookingAgreement(BaseModel):
+    booking_id: int
+    booking_code: str
+    customer: Optional[dict] = None
+    agency: Optional[dict] = None
+    destination: Optional[str] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
+    travel_start_date: Optional[str] = None
+    travel_end_date: Optional[str] = None
+    duration: Optional[int] = None
+    accepted_offer: Optional[dict] = None
+    price: Optional[float] = None
+    currency: Optional[str] = None
+    included_services: Optional[str] = None
+    excluded_services: Optional[str] = None
+    terms: Optional[str] = None
+    booking_status: str
+    accepted_at: Optional[datetime] = None
+    booking_created_at: datetime
 
 class TripOfferMessageCreateRequest(BaseModel):
     content: str

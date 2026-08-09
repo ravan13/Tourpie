@@ -814,13 +814,18 @@ export type TripDestinationType = "any" | "country" | "city";
 export type TripBudgetFlexibility = "fixed" | "flexible_10" | "flexible_20" | "no_budget_limit";
 export type TripRequestStatus =
   | "draft"
+  | "active"
   | "submitted"
   | "searching_agencies"
   | "receiving_offers"
   | "comparing_offers"
   | "accepted"
+  | "completed"
   | "expired"
-  | "cancelled";
+  | "cancelled"
+  | "archived";
+
+export type MatchAgencyStatus = "pending" | "viewed" | "interested" | "rejected" | "offered";
 
 export interface TripRequest {
   id: number;
@@ -828,33 +833,49 @@ export interface TripRequest {
   user_id: number;
   destination: string;
   destination_type: TripDestinationType;
+  country?: string | null;
+  city?: string | null;
   start_date?: string | null;
   end_date?: string | null;
   flexible_dates: boolean;
+  duration?: number | null;
   adults: number;
   children: number;
   ideal_budget: number;
+  budget?: number | null;
   max_budget?: number | null;
   budget_currency: string;
+  currency?: string | null;
   budget_flexibility: TripBudgetFlexibility;
   hotel_stars?: number | null;
   meal_type?: string | null;
+  meal_preference?: string | null;
+  transportation?: string | null;
   flight_included: boolean;
   transfer_included: boolean;
   visa_assistance: boolean;
+  visa_required?: boolean | null;
   travel_insurance: boolean;
+  travel_style?: string | null;
   preferred_airline?: string | null;
   accommodation_preferences?: string | null;
   activities_interests?: string | null;
+  special_requirements?: string | null;
   special_notes?: string | null;
+  notes?: string | null;
+  attachments?: string[] | null;
   offer_expiration_hours: number;
   expires_at: string;
+  submitted_at?: string | null;
+  archived_at?: string | null;
   status: TripRequestStatus;
   created_at: string;
   updated_at: string;
+  offers_count?: number;
+  matches_count?: number;
 }
 
-export type TripOfferStatus = "submitted" | "accepted" | "declined" | "expired" | "cancelled";
+export type TripOfferStatus = "draft" | "submitted" | "accepted" | "declined" | "rejected" | "expired" | "cancelled";
 
 export interface TripOffer {
   id: number;
@@ -862,35 +883,208 @@ export interface TripOffer {
   agency_id: number;
   created_by_user_id: number;
   total_price: number;
+  price?: number | null;
   currency: string;
   hotel?: string | null;
+  hotel_stars?: number | null;
   room_type?: string | null;
   meal_plan?: string | null;
   flight?: string | null;
+  flight_included?: boolean | null;
   transfer?: string | null;
+  airport_transfer?: boolean | null;
   visa?: string | null;
+  visa_support?: boolean | null;
   insurance?: string | null;
+  insurance_included?: boolean | null;
+  breakfast_included?: boolean | null;
+  lunch_included?: boolean | null;
+  dinner_included?: boolean | null;
   activities?: string | null;
+  travel_program?: string | null;
+  included_services?: string | null;
+  excluded_services?: string | null;
+  offer_attachments?: string[] | null;
+  expiration_date?: string | null;
+  notes?: string | null;
   offer_description?: string | null;
   additional_benefits?: string | null;
   price_difference_reason?: string | null;
   price_difference_notes?: string | null;
+  is_bookmarked?: boolean | null;
+  rating?: number | null;
+  reviews_count?: number | null;
+  response_time_minutes?: number | null;
+  revision_requested_at?: string | null;
+  revision_notes?: string | null;
   expires_at: string;
+  submitted_at?: string | null;
+  cancelled_at?: string | null;
   status: TripOfferStatus;
   created_at: string;
   updated_at: string;
   accepted_at?: string | null;
   declined_at?: string | null;
+  agency?: {
+    id: number;
+    name: string;
+    description?: string | null;
+    contact_email?: string | null;
+    phone_number?: string | null;
+    rating?: number | null;
+    reviews_count?: number | null;
+  } | null;
 }
 
 export interface TripBooking {
   id: number;
+  booking_code?: string | null;
   trip_request_id: number;
   trip_offer_id: number;
   user_id: number;
   agency_id: number;
   status: string;
   created_at: string;
+  accepted_at?: string | null;
+  trip_started_at?: string | null;
+  trip_completed_at?: string | null;
+  cancelled_at?: string | null;
+  notes?: string | null;
+  offer_accepted?: Record<string, any> | null;
+  agreement?: Record<string, any> | null;
+  documents_count?: number | null;
+  pending_documents_count?: number | null;
+  payments_count?: number | null;
+  checklist_total?: number | null;
+  checklist_completed?: number | null;
+  review_submitted?: boolean | null;
+  request_code?: string | null;
+  destination?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  duration?: number | null;
+  agency_name?: string | null;
+  agency_rating?: number | null;
+  agency_reviews_count?: number | null;
+  total_price?: number | null;
+  currency?: string | null;
+}
+
+export interface TripBookingTimelineEvent {
+  id: number;
+  booking_id: number;
+  event_type: string;
+  actor_role?: string | null;
+  actor_user_id?: number | null;
+  actor_display_name?: string | null;
+  note?: string | null;
+  created_at: string;
+}
+
+export interface TripBookingDocument {
+  id: number;
+  booking_id: number;
+  uploader_user_id: number;
+  document_type: string;
+  filename?: string | null;
+  file_url: string;
+  status: string;
+  note?: string | null;
+  created_at: string;
+  viewed_at?: string | null;
+  reviewed_at?: string | null;
+  uploader_display_name?: string | null;
+}
+
+export interface TripBookingPaymentRecord {
+  id: number;
+  booking_id: number;
+  status: string;
+  payment_method?: string | null;
+  reference_number?: string | null;
+  amount?: number | null;
+  currency?: string | null;
+  payment_date?: string | null;
+  note?: string | null;
+  agency_confirmed_at?: string | null;
+  customer_confirmed_at?: string | null;
+  created_at: string;
+}
+
+export interface TripBookingChecklistItem {
+  id: number;
+  booking_id: number;
+  label: string;
+  is_completed: boolean;
+  is_recommended: boolean;
+  sort_order: number;
+  completed_by_user_id?: number | null;
+  completed_at?: string | null;
+  created_at: string;
+}
+
+export interface TripBookingMessage {
+  id: number;
+  booking_id: number;
+  sender_role: string;
+  sender_user_id: number;
+  content: string;
+  attachment_url?: string | null;
+  is_read: boolean;
+  created_at: string;
+  sender_display_name?: string | null;
+}
+
+export interface TripBookingReview {
+  id: number;
+  booking_id: number;
+  trip_request_id: number;
+  user_id: number;
+  agency_id: number;
+  rating: number;
+  comment?: string | null;
+  photos?: string[] | null;
+  trip_story?: string | null;
+  agency_response?: string | null;
+  agency_response_at?: string | null;
+  is_hidden: boolean;
+  created_at: string;
+  user_display_name?: string | null;
+}
+
+export interface TripBookingAgreement {
+  booking_id: number;
+  booking_code: string;
+  customer?: Record<string, any> | null;
+  agency?: Record<string, any> | null;
+  destination?: string | null;
+  country?: string | null;
+  city?: string | null;
+  travel_start_date?: string | null;
+  travel_end_date?: string | null;
+  duration?: number | null;
+  accepted_offer?: Record<string, any> | null;
+  price?: number | null;
+  currency?: string | null;
+  included_services?: string | null;
+  excluded_services?: string | null;
+  terms?: string | null;
+  booking_status: string;
+  accepted_at?: string | null;
+  booking_created_at: string;
+}
+
+export interface TripBookingWorkspace {
+  booking: TripBooking;
+  trip_request?: Record<string, any> | null;
+  trip_offer?: Record<string, any> | null;
+  timeline: TripBookingTimelineEvent[];
+  documents: TripBookingDocument[];
+  payments: TripBookingPaymentRecord[];
+  checklist: TripBookingChecklistItem[];
+  messages: TripBookingMessage[];
+  review?: TripBookingReview | null;
+  agreement_snapshot?: Record<string, any> | null;
 }
 
 export interface TripOfferMessage {
@@ -916,6 +1110,26 @@ export interface TripOfferNotification {
   link_url?: string | null;
   is_read: boolean;
   created_at: string;
+}
+
+export interface TripRequestAgencyMatch {
+  id: number;
+  trip_request_id: number;
+  agency_id: number;
+  status: MatchAgencyStatus;
+  viewed_at?: string | null;
+  interested_at?: string | null;
+  declined_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+  agency?: {
+    id: number;
+    name: string;
+    contact_email?: string | null;
+    phone_number?: string | null;
+    rating?: number | null;
+    reviews_count?: number | null;
+  } | null;
 }
 
 export const api = {
@@ -1388,60 +1602,191 @@ export const api = {
   },
   tripMarketplace: {
     createRequest: (data: {
-      destination: string;
-      destination_type: TripDestinationType;
+      destination?: string | null;
+      destination_type?: TripDestinationType;
+      country?: string | null;
+      city?: string | null;
       start_date?: string | null;
       end_date?: string | null;
-      flexible_dates: boolean;
-      adults: number;
-      children: number;
-      ideal_budget: number;
+      flexible_dates?: boolean;
+      duration?: number | null;
+      adults?: number;
+      children?: number;
+      ideal_budget?: number;
+      budget?: number | null;
       max_budget?: number | null;
-      budget_currency: string;
-      budget_flexibility: TripBudgetFlexibility;
+      budget_currency?: string;
+      currency?: string | null;
+      budget_flexibility?: TripBudgetFlexibility;
       hotel_stars?: number | null;
       meal_type?: string | null;
-      flight_included: boolean;
-      transfer_included: boolean;
-      visa_assistance: boolean;
-      travel_insurance: boolean;
+      meal_preference?: string | null;
+      transportation?: string | null;
+      flight_included?: boolean;
+      transfer_included?: boolean;
+      visa_assistance?: boolean;
+      visa_required?: boolean | null;
+      travel_insurance?: boolean;
+      travel_style?: string | null;
       preferred_airline?: string | null;
       accommodation_preferences?: string | null;
       activities_interests?: string | null;
+      special_requirements?: string | null;
       special_notes?: string | null;
-      offer_expiration_hours: 24 | 48 | 72;
+      notes?: string | null;
+      attachments?: string[] | null;
+      offer_expiration_hours?: 24 | 48 | 72;
+      save_as_draft?: boolean;
     }): Promise<TripRequest> =>
       fetchApi(`/trip-requests`, { method: "POST", body: JSON.stringify(data) }),
-    listMyRequests: (): Promise<TripRequest[]> => fetchApi(`/trip-requests/me`),
+    listMyRequests: (status?: string): Promise<TripRequest[]> => {
+      const q = status ? `?status=${encodeURIComponent(status)}` : "";
+      return fetchApi(`/trip-requests/me${q}`);
+    },
     getRequest: (id: number): Promise<TripRequest> => fetchApi(`/trip-requests/${id}`),
+    updateRequest: (id: number, data: Partial<{
+      destination?: string | null;
+      destination_type?: TripDestinationType;
+      country?: string | null;
+      city?: string | null;
+      start_date?: string | null;
+      end_date?: string | null;
+      flexible_dates?: boolean;
+      duration?: number | null;
+      adults?: number;
+      children?: number;
+      ideal_budget?: number;
+      budget?: number | null;
+      max_budget?: number | null;
+      budget_currency?: string;
+      currency?: string | null;
+      budget_flexibility?: TripBudgetFlexibility;
+      hotel_stars?: number | null;
+      meal_type?: string | null;
+      meal_preference?: string | null;
+      transportation?: string | null;
+      flight_included?: boolean;
+      transfer_included?: boolean;
+      visa_assistance?: boolean;
+      visa_required?: boolean | null;
+      travel_insurance?: boolean;
+      travel_style?: string | null;
+      preferred_airline?: string | null;
+      accommodation_preferences?: string | null;
+      activities_interests?: string | null;
+      special_requirements?: string | null;
+      special_notes?: string | null;
+      notes?: string | null;
+      attachments?: string[] | null;
+      offer_expiration_hours?: number;
+      submit?: boolean;
+    }>): Promise<TripRequest> =>
+      fetchApi(`/trip-requests/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    submitRequest: (id: number): Promise<TripRequest> => fetchApi(`/trip-requests/${id}/submit`, { method: "POST" }),
     cancelRequest: (id: number): Promise<TripRequest> => fetchApi(`/trip-requests/${id}/cancel`, { method: "POST" }),
+    archiveRequest: (id: number): Promise<TripRequest> => fetchApi(`/trip-requests/${id}/archive`, { method: "POST" }),
+    deleteRequest: (id: number): Promise<{ message: string }> => fetchApi(`/trip-requests/${id}`, { method: "DELETE" }),
+    duplicateRequest: (id: number): Promise<TripRequest> => fetchApi(`/trip-requests/${id}/duplicate`, { method: "POST" }),
+    rematchRequest: (id: number): Promise<TripRequest> => fetchApi(`/trip-requests/${id}/rematch`, { method: "POST" }),
     listRequestOffers: (id: number): Promise<TripOffer[]> => fetchApi(`/trip-requests/${id}/offers`),
     listMyOffers: (): Promise<TripOffer[]> => fetchApi(`/trip-offers/me`),
     getOffer: (id: number): Promise<TripOffer> => fetchApi(`/trip-offers/${id}`),
     acceptOffer: (id: number): Promise<TripBooking> => fetchApi(`/trip-offers/${id}/accept`, { method: "POST" }),
+    rejectOffer: (id: number): Promise<TripOffer> => fetchApi(`/trip-offers/${id}/reject`, { method: "POST" }),
+    requestRevision: (id: number, notes?: string | null): Promise<TripOffer> =>
+      fetchApi(`/trip-offers/${id}/request-revision`, { method: "POST", body: JSON.stringify({ notes: notes ?? null }) }),
+    bookmarkOffer: (id: number, bookmarked?: boolean): Promise<TripOffer> =>
+      fetchApi(`/trip-offers/${id}/bookmark`, {
+        method: "POST",
+        body: typeof bookmarked === "boolean" ? JSON.stringify({ bookmarked }) : undefined,
+      }),
     agencyListIncoming: (): Promise<TripRequest[]> => fetchApi(`/agency/trip-requests`),
-    agencyDeclineRequest: (tripRequestId: number, reason?: string | null): Promise<{ id: number; trip_request_id: number; agency_id: number; status: string; declined_reason?: string | null; created_at: string }> =>
+    agencyGetMatch: (tripRequestId: number): Promise<TripRequestAgencyMatch> =>
+      fetchApi(`/agency/trip-requests/${tripRequestId}/match`),
+    agencyMarkViewed: (tripRequestId: number): Promise<TripRequestAgencyMatch> =>
+      fetchApi(`/agency/trip-requests/${tripRequestId}/viewed`, { method: "POST" }),
+    agencyMarkInterested: (tripRequestId: number): Promise<TripRequestAgencyMatch> =>
+      fetchApi(`/agency/trip-requests/${tripRequestId}/interested`, { method: "POST" }),
+    agencyDeclineRequest: (tripRequestId: number, reason?: string | null): Promise<TripRequestAgencyMatch> =>
       fetchApi(`/agency/trip-requests/${tripRequestId}/decline${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`, { method: "POST" }),
+    agencyListOffers: (tripRequestId: number): Promise<TripOffer[]> =>
+      fetchApi(`/agency/trip-requests/${tripRequestId}/offers`),
     agencyCreateOffer: (
       tripRequestId: number,
       data: {
-        total_price: number;
-        currency: string;
+        total_price?: number;
+        price?: number | null;
+        currency?: string;
         hotel?: string | null;
+        hotel_stars?: number | null;
         room_type?: string | null;
         meal_plan?: string | null;
         flight?: string | null;
+        flight_included?: boolean | null;
         transfer?: string | null;
+        airport_transfer?: boolean | null;
         visa?: string | null;
+        visa_support?: boolean | null;
         insurance?: string | null;
+        insurance_included?: boolean | null;
+        breakfast_included?: boolean | null;
+        lunch_included?: boolean | null;
+        dinner_included?: boolean | null;
         activities?: string | null;
+        travel_program?: string | null;
+        included_services?: string | null;
+        excluded_services?: string | null;
+        offer_attachments?: string[] | null;
+        expiration_date?: string | null;
+        notes?: string | null;
         offer_description?: string | null;
         additional_benefits?: string | null;
         offer_expiration_hours?: number | null;
         price_difference_reason?: string | null;
         price_difference_notes?: string | null;
+        is_draft?: boolean;
       }
     ): Promise<TripOffer> => fetchApi(`/agency/trip-requests/${tripRequestId}/offers`, { method: "POST", body: JSON.stringify(data) }),
+    agencyUpdateOffer: (
+      offerId: number,
+      data: Partial<{
+        total_price?: number;
+        price?: number | null;
+        currency?: string;
+        hotel?: string | null;
+        hotel_stars?: number | null;
+        room_type?: string | null;
+        meal_plan?: string | null;
+        flight?: string | null;
+        flight_included?: boolean | null;
+        transfer?: string | null;
+        airport_transfer?: boolean | null;
+        visa?: string | null;
+        visa_support?: boolean | null;
+        insurance?: string | null;
+        insurance_included?: boolean | null;
+        breakfast_included?: boolean | null;
+        lunch_included?: boolean | null;
+        dinner_included?: boolean | null;
+        activities?: string | null;
+        travel_program?: string | null;
+        included_services?: string | null;
+        excluded_services?: string | null;
+        offer_attachments?: string[] | null;
+        expiration_date?: string | null;
+        notes?: string | null;
+        offer_description?: string | null;
+        additional_benefits?: string | null;
+        offer_expiration_hours?: number | null;
+        price_difference_reason?: string | null;
+        price_difference_notes?: string | null;
+        submit?: boolean;
+      }>
+    ): Promise<TripOffer> => fetchApi(`/agency/offers/${offerId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    agencySubmitOffer: (offerId: number): Promise<TripOffer> =>
+      fetchApi(`/agency/offers/${offerId}/submit`, { method: "POST" }),
+    agencyCancelOffer: (offerId: number): Promise<TripOffer> =>
+      fetchApi(`/agency/offers/${offerId}/cancel`, { method: "POST" }),
     listNotifications: (): Promise<TripOfferNotification[]> => fetchApi(`/trip-notifications`),
     markNotificationRead: (id: number): Promise<TripOfferNotification> => fetchApi(`/trip-notifications/${id}/read`, { method: "POST" }),
     listOfferMessages: (offerId: number): Promise<TripOfferMessage[]> => fetchApi(`/trip-offers/${offerId}/messages`),
@@ -1449,6 +1794,83 @@ export const api = {
       fetchApi(`/trip-offers/${offerId}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
     adminListRequests: (): Promise<TripRequest[]> => fetchApi(`/admin/trip-requests`),
     adminListOffers: (): Promise<TripOffer[]> => fetchApi(`/admin/trip-offers`),
+    listMyBookings: (status?: string | null): Promise<TripBooking[]> =>
+      fetchApi(`/trip-bookings/me${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+    getBooking: (id: number): Promise<TripBooking> => fetchApi(`/trip-bookings/${id}`),
+    getBookingWorkspace: (id: number): Promise<TripBookingWorkspace> => fetchApi(`/trip-bookings/${id}/workspace`),
+    getBookingAgreement: (id: number): Promise<TripBookingAgreement> => fetchApi(`/trip-bookings/${id}/agreement`),
+    setBookingStatus: (id: number, status: string, note?: string | null): Promise<TripBooking> =>
+      fetchApi(`/trip-bookings/${id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status, note: note ?? null }),
+      }),
+    setBookingNotes: (id: number, notes: string | null): Promise<TripBooking> =>
+      fetchApi(`/trip-bookings/${id}/notes`, { method: "PATCH", body: JSON.stringify({ notes }) }),
+    listBookingDocuments: (id: number): Promise<TripBookingDocument[]> => fetchApi(`/trip-bookings/${id}/documents`),
+    uploadBookingDocument: (
+      id: number,
+      payload: { document_type?: string; filename?: string | null; file_url: string; note?: string | null },
+    ): Promise<TripBookingDocument> =>
+      fetchApi(`/trip-bookings/${id}/documents`, { method: "POST", body: JSON.stringify(payload) }),
+    setBookingDocumentStatus: (
+      bookingId: number,
+      docId: number,
+      status: string,
+    ): Promise<TripBookingDocument> =>
+      fetchApi(`/trip-bookings/${bookingId}/documents/${docId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      }),
+    listBookingPayments: (id: number): Promise<TripBookingPaymentRecord[]> => fetchApi(`/trip-bookings/${id}/payments`),
+    upsertBookingPayment: (
+      id: number,
+      payload: {
+        status?: string | null;
+        payment_method?: string | null;
+        reference_number?: string | null;
+        amount?: number | null;
+        currency?: string | null;
+        payment_date?: string | null;
+        note?: string | null;
+        agency_confirm?: boolean | null;
+        customer_confirm?: boolean | null;
+      },
+    ): Promise<TripBookingPaymentRecord> =>
+      fetchApi(`/trip-bookings/${id}/payments`, { method: "POST", body: JSON.stringify(payload) }),
+    listBookingChecklist: (id: number): Promise<TripBookingChecklistItem[]> => fetchApi(`/trip-bookings/${id}/checklist`),
+    updateBookingChecklist: (
+      id: number,
+      payload: {
+        item_id: number;
+        is_completed?: boolean | null;
+        is_recommended?: boolean | null;
+        label?: string | null;
+      },
+    ): Promise<TripBookingChecklistItem[]> =>
+      fetchApi(`/trip-bookings/${id}/checklist`, { method: "PATCH", body: JSON.stringify(payload) }),
+    addBookingChecklist: (id: number, label: string, is_recommended = false): Promise<TripBookingChecklistItem[]> =>
+      fetchApi(`/trip-bookings/${id}/checklist`, {
+        method: "POST",
+        body: JSON.stringify({ label, is_recommended }),
+      }),
+    listBookingMessages: (id: number): Promise<TripBookingMessage[]> => fetchApi(`/trip-bookings/${id}/messages`),
+    sendBookingMessage: (id: number, content: string, attachment_url?: string | null): Promise<TripBookingMessage> =>
+      fetchApi(`/trip-bookings/${id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ content, attachment_url: attachment_url ?? null }),
+      }),
+    getBookingReview: (id: number): Promise<TripBookingReview | null> => fetchApi(`/trip-bookings/${id}/review`),
+    submitBookingReview: (
+      id: number,
+      payload: { rating: number; comment?: string | null; photos?: string[] | null; trip_story?: string | null },
+    ): Promise<TripBookingReview> =>
+      fetchApi(`/trip-bookings/${id}/review`, { method: "POST", body: JSON.stringify(payload) }),
+    agencyReviewResponse: (id: number, agency_response: string): Promise<TripBookingReview> =>
+      fetchApi(`/trip-bookings/${id}/review/agency-response`, {
+        method: "POST",
+        body: JSON.stringify({ agency_response }),
+      }),
+    adminListBookings: (): Promise<TripBooking[]> => fetchApi(`/admin/trip-bookings`),
   },
   messages: {
     listConversations: (): Promise<Conversation[]> => fetchApi(`/messages/conversations`),

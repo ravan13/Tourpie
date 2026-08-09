@@ -24,12 +24,18 @@ export default function AdminLoginPage() {
   const [resetCode, setResetCode] = useState("");
   const [resetNewPassword, setResetNewPassword] = useState("");
   const [resetNewPasswordConfirm, setResetNewPasswordConfirm] = useState("");
+  const [initialRedirectDone, setInitialRedirectDone] = useState(false);
 
   useEffect(() => {
+    if (initialRedirectDone) return;
     const token = getStoredToken();
-    if (!token) return;
+    if (!token) {
+      setInitialRedirectDone(true);
+      return;
+    }
     const decoded = getStoredTokenPayload();
     const role = typeof decoded?.role === "string" ? decoded.role : null;
+    setInitialRedirectDone(true);
     if (role === "admin") {
       router.replace("/admin");
     } else if (role === "agency") {
@@ -37,7 +43,7 @@ export default function AdminLoginPage() {
     } else {
       router.replace("/dashboard");
     }
-  }, [router]);
+  }, [router, initialRedirectDone]);
 
   useEffect(() => {
     const id = window.setTimeout(() => {

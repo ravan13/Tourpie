@@ -11,10 +11,8 @@ from email.message import EmailMessage
 import base64
 import urllib.parse
 import urllib.request
-import json
 import resend
 from pathlib import Path
-from urllib.error import HTTPError
 
 # Workaround for passlib + bcrypt 4.0.0+ compatibility issue
 # https://github.com/pyca/bcrypt/issues/684

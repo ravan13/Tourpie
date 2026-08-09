@@ -37,44 +37,51 @@ export default function LoginPage() {
 
   useEffect(() => {
     let cancelled = false;
+    let firstAuthReadySeen = false;
 
     void (async () => {
       if (!authReady) return;
 
-      const token = getStoredToken();
-      if (!user) {
-        if (token) {
-          await clearSessionToken();
+      if (!firstAuthReadySeen) {
+        firstAuthReadySeen = true;
+        const token = getStoredToken();
+        if (!user) {
+          if (token) {
+            await clearSessionToken();
+          }
+          if (!cancelled) setReady(true);
+          return;
         }
-        if (!cancelled) setReady(true);
+
+        const role = typeof user.role === "string" ? user.role : null;
+        if (role === "admin") {
+          router.replace("/admin");
+          return;
+        }
+        if (role === "agency") {
+          router.replace("/agency");
+          return;
+        }
+        if (user.onboarding_completed === false) {
+          if (!cancelled) setReady(true);
+          return;
+        }
+        if (!token) {
+          await clearSessionToken();
+          if (!cancelled) setReady(true);
+          return;
+        }
+        router.replace("/dashboard");
         return;
       }
 
-      const role = typeof user.role === "string" ? user.role : null;
-      if (role === "admin") {
-        router.replace("/admin");
-        return;
-      }
-      if (role === "agency") {
-        router.replace("/agency");
-        return;
-      }
-      if (user.onboarding_completed === false) {
-        if (!cancelled) setReady(true);
-        return;
-      }
-      if (!token) {
-        await clearSessionToken();
-        if (!cancelled) setReady(true);
-        return;
-      }
-      router.replace("/dashboard");
+      if (!cancelled && !ready) setReady(true);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [authReady, router, user]);
+  }, [authReady, router, user, ready]);
 
   if (!authReady && !ready) {
     return (

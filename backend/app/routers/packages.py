@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, or_
+from sqlalchemy import or_
 from typing import List, Optional
 import datetime
 import json
@@ -241,25 +241,6 @@ def _resolve_unit_price(pkg, currency: str | None) -> float:
             return float(_convert_amount(base_manual, base_currency, requested))
     return float(_convert_amount(base_price, base_currency, requested))
 
-#def format_package(pkg):
-  #  if pkg.images and isinstance(pkg.images, str):
-  #      try:
-  #          pkg.images = json.loads(pkg.images)
-  #      except json.JSONDecodeError:
-  #          pkg.images = []
-  #  if pkg.highlights and isinstance(pkg.highlights, str):
-  #      try:
-  #          pkg.highlights = json.loads(pkg.highlights)
-  #      except json.JSONDecodeError:
-  #          pkg.highlights = [] 
-  #  if getattr(pkg, "prices", None) and isinstance(pkg.prices, str):
-  #      try:
-  #          parsed = json.loads(pkg.prices)
-  #         pkg.prices = parsed if isinstance(parsed, dict) else None
-  #      except json.JSONDecodeError:
-  #          pkg.prices = None
-  #  return pkg 
-    
 def format_package(pkg):
     pkg.images = _coerce_string_list(getattr(pkg, "images", None))
     pkg.highlights = _coerce_string_list(getattr(pkg, "highlights", None))

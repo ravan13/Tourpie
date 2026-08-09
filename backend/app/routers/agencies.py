@@ -7,6 +7,7 @@ from typing import List, Optional
 from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from .. import models, schemas, database, auth
+from ..deps import get_current_user
 import logging
 import os
 import secrets
@@ -82,15 +83,6 @@ def _phone_verification_sms(lang: str, code: str, minutes: int) -> str:
 
 def _role_value(user: models.User) -> str:
     return user.role.value if hasattr(user.role, "value") else str(user.role)
-
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(database.get_db)) -> models.User:
-    payload = auth.decode_access_token(token)
-    if not payload or not payload.get("sub"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user = db.query(models.User).filter(models.User.email == payload["sub"]).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return user
 
 def require_admin(user: models.User) -> None:
     if _role_value(user) != "admin":

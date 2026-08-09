@@ -6,7 +6,7 @@ import secrets
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, func, or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from .. import database, models, schemas
@@ -868,13 +868,6 @@ def list_my_trip_requests(
         query = query.filter(or_(models.TripRequest.status != models.TripRequestStatus.ARCHIVED, models.TripRequest.status.is_(None)))
     rows = query.order_by(models.TripRequest.created_at.desc()).limit(500).all()
     _apply_request_lifecycle(db, rows)
-    rows_with_offers = []
-    expired_rows = []
-    for row in rows:
-        status_value = getattr(row.status, "value", row.status) if row.status else None
-        if status_value == "expired":
-            expired_rows.append(row)
-    rows_with_offers.extend(rows)
     db.flush()
     _enrich_many_requests(db, rows)
     db.commit()

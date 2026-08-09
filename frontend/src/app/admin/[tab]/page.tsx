@@ -1570,7 +1570,81 @@ function AdminUsers() {
             <div className="mt-4 text-xl font-black text-gray-900">{t("admin_users_empty")}</div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="md:hidden divide-y divide-gray-50">
+            {pageItems.map((u) => (
+              <div key={`m-u-${u.id}`} className="px-5 py-5">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 shrink-0"
+                    checked={Boolean(selected[u.id])}
+                    onChange={(e) => setSelected((prev) => ({ ...prev, [u.id]: e.target.checked }))}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-black text-gray-900 truncate">{u.full_name || "—"}</div>
+                      <div className="text-xs font-bold text-gray-500 shrink-0">#{u.id}</div>
+                    </div>
+                    <div className="text-xs text-gray-400 truncate mt-0.5">{u.email}</div>
+                    {(u as unknown as { created_at?: string }).created_at ? (
+                      <div className="text-[11px] text-gray-400 mt-0.5">
+                        Joined {new Date((u as unknown as { created_at: string }).created_at).toLocaleDateString()}
+                      </div>
+                    ) : null}
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                        {String(u.role || "user")}
+                      </span>
+                      {u.agency_id != null ? (
+                        <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">Agency #{u.agency_id}</span>
+                      ) : null}
+                      <span className={`text-[11px] font-black px-2 py-0.5 rounded-full ${u.is_verified ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-700"}`}>
+                        {u.is_verified ? t("admin_users_verified") : t("admin_users_unverified")}
+                      </span>
+                      {isBannedUser(u) ? (
+                        <span className={`text-[11px] font-black px-2 py-0.5 rounded-full ${isSuspendedUser(u) ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-700"}`}>
+                          {isSuspendedUser(u) ? t("admin_users_status_suspended") : t("admin_users_status_banned")}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                          {t("admin_users_status_active")}
+                        </span>
+                      )}
+                    </div>
+                    {!u.onboarding_completed ? (
+                      <div className="text-[11px] font-bold text-gray-400 mt-1">{t("admin_users_not_onboarded")}</div>
+                    ) : null}
+                    <div className="mt-3 flex gap-1.5 flex-wrap">
+                      {!u.is_verified ? (
+                        <ActionIconButton title={t("common_verify")} tone="primary" disabled={acting} onClick={() => void handleVerify([u.id])}>
+                          <Icon d="M9.55 16.2 4.8 11.45l1.4-1.4 3.35 3.35 8.25-8.25 1.4 1.4-9.65 9.65Z" />
+                        </ActionIconButton>
+                      ) : null}
+                      {!isBannedUser(u) ? (
+                        <>
+                          <ActionIconButton title={t("admin_users_suspend_days", { days: 7 })} disabled={acting} onClick={() => void handleBan([u.id], 7)}>
+                            <Icon d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1 5h2v10h-2V7Z" />
+                          </ActionIconButton>
+                          <ActionIconButton title={t("common_ban")} disabled={acting} onClick={() => void handleBan([u.id], null)}>
+                            <Icon d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm5 10a4.96 4.96 0 0 1-1.24 3.28L8.72 7.24A4.96 4.96 0 0 1 12 6a6 6 0 0 1 5 6Zm-10 0a4.96 4.96 0 0 1 1.24-3.28l7.04 8.04A4.96 4.96 0 0 1 12 18a6 6 0 0 1-5-6Z" />
+                          </ActionIconButton>
+                        </>
+                      ) : (
+                        <ActionIconButton title={t("common_unban")} disabled={acting} onClick={() => void handleUnban([u.id])}>
+                          <Icon d="M12 5a7 7 0 1 1 0 14 7 7 0 0 1 0-14Zm-1 4h2v4.25l2.5 1.5-1 1.66L11 14V9Z" />
+                        </ActionIconButton>
+                      )}
+                      <ActionIconButton title={t("common_delete")} tone="danger" disabled={acting} onClick={() => void handleDelete([u.id])}>
+                        <Icon d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9Z" />
+                      </ActionIconButton>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50">
@@ -1664,6 +1738,7 @@ function AdminUsers() {
               </tbody>
             </table>
           </div>
+          </>
         )}
         {!loading && filtered.length > 0 ? (
           <div className="px-10 py-6 border-t border-gray-50 flex items-center justify-between">

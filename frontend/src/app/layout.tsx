@@ -66,6 +66,26 @@ export const metadata: Metadata = {
     description: "Discover your slice of the world.",
     images: ["/tourpie-social.svg"],
   },
+  alternates: {
+    canonical: "/",
+    languages: {
+      en: "/?lang=en",
+      ru: "/?lang=ru",
+      az: "/?lang=az",
+      tr: "/?lang=tr",
+    },
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
   icons: {
     icon: [
       { url: "/favicon.ico", type: "image/x-icon" },

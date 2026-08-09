@@ -8,6 +8,7 @@ from .database import SessionLocal
 from .models import User, UserRole
 from .auth import get_password_hash
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 import logging
 import os 
 from dotenv import load_dotenv
@@ -16,8 +17,6 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 env_file = BASE_DIR / ".env"
 
-load_dotenv(env_file, override=True)
-load_dotenv(BASE_DIR / ".env", override=True)
 load_dotenv(env_file, override=True)
 
 _env_name = (os.getenv("TOURPIE_ENV") or os.getenv("ENVIRONMENT") or os.getenv("ENV") or "development").strip().lower()
@@ -317,3 +316,31 @@ app.include_router(trip_marketplace.router, tags=["trip_marketplace"])
 @app.get("/")
 async def root():
     return {"message": "Welcome to TourPie API"}
+
+
+@app.get("/health", tags=["monitoring"])
+async def health_check():
+    return {
+        "status": "ok",
+        "service": "tourpie-api",
+        "version": "1.7-rc1",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/ready", tags=["monitoring"])
+async def readiness_check(db: Session = Depends(SessionLocal)):
+    try:
+        db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+    finally:
+        db.close()
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "checks": {
+            "database": "ok" if db_ok else "error",
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }

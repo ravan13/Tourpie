@@ -6,7 +6,7 @@ import { api, Agency, AgencyApplication, Booking, getStoredToken } from "@/lib/a
 import { useLanguage } from "@/context/LanguageContext";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 function ActionIconButton({
   title,
@@ -93,6 +93,7 @@ export default function AdminTabPage() {
   if (tab === "payments") return <AdminPayments />;
   if (tab === "disputes") return <AdminDisputes />;
   if (tab === "admin-management") return <AdminAdminManagement />;
+  if (tab === "audit-logs" || tab === "logs") return <AdminAuditLogs />;
 
   return (
     <DashboardShell title={t("admin_nav_overview")} nav={nav}>
@@ -612,12 +613,18 @@ function AdminAgencies() {
 }
 
 function AdminBookings() {
-  const { t } = useLanguage();
+  const { t, formatMoney } = useLanguage();
   const nav = useMemo(() => adminNav(t), [t]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
-  const [items, setItems] = useState<Booking[]>([]);
+  const [items, setItems] = useState<any[]>([]);
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [q, setQ] = useState("");
+  const [kind, setKind] = useState<"all" | "package" | "custom">("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sort, setSort] = useState<"newest" | "oldest" | "high" | "low">("newest");
+  const [page, setPage] = useState(0);
+  const pageSize = 25;
   const statuses = useMemo(
     () => [
       "pending",
@@ -631,104 +638,350 @@ function AdminBookings() {
       "refund_requested",
       "refunded",
       "disputed",
+      "draft",
+      "active",
+      "expired",
+      "paid",
+      "submitted",
     ],
     []
   );
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        setLoading(true);
-        const all = await api.bookings.getAll();
-        setItems(all);
-      } catch {
-        setItems([]);
-      } finally {
-        setLoading(false);
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [pk, custom] = await Promise.all([
+        api.bookings.getAll().catch(() => []),
+        (api.tripMarketplace as any).adminListBookings?.().catch(() => []) ?? Promise.resolve([]),
+      ]);
+      const packageRows: any[] = Array.isArray(pk)
+        ? pk.map((b: any) => ({
+            kind: "package",
+            id: b.id,
+            status: b.status || "pending",
+            title: b.package?.title || `Package Booking #${b.id}`,
+            destination: b.package?.country || b.package?.city || b.package?.destination || null,
+            agency_name: b.package?.agency?.name || null,
+            customer_name: (b.user?.full_name || (b as any).customer_name || "Customer"),
+            customer_email: b.user?.email || (b as any).customer_email || undefined,
+            travel_date: b.travel_date || null,
+            people: b.number_of_people ?? null,
+            price: Number(b.offered_total_price ?? b.total_price ?? 0),
+            currency: b.currency || "USD",
+            payment_status: b.payment_status || null,
+            created_at: b.accepted_at || b.booking_date || (b as any).created_at || null,
+            raw: b,
+          }))
+        : [];
+      const customRows: any[] = Array.isArray(custom)
+        ? custom.map((tb: any) => ({
+            kind: "custom",
+            id: tb.id,
+            status: tb.status || (tb as any).trip_request?.status || "pending",
+            title: (tb as any).trip_request?.destination || `Custom Trip #${tb.id}`,
+            destination: (tb as any).trip_request?.country || (tb as any).trip_request?.city || null,
+            agency_name: (tb as any).agency?.name || null,
+            customer_name: (tb as any).customer?.full_name || (tb as any).user?.full_name || "Customer",
+            customer_email: (tb as any).customer?.email || (tb as any).user?.email || undefined,
+            travel_date: (tb as any).trip_request?.start_date || tb.created_at || null,
+            people: Number((tb as any).trip_request?.adults ?? 0) + Number((tb as any).trip_request?.children ?? 0) || null,
+            price: Number(tb.total_price ?? (tb as any).offer?.total_price ?? 0),
+            currency: tb.currency || (tb as any).offer?.currency || "USD",
+            payment_status: tb.payment_status || null,
+            created_at: tb.created_at || null,
+            raw: tb,
+          }))
+        : [];
+      const seen = new Set<string>();
+      const merged: any[] = [];
+      for (const r of [...packageRows, ...customRows]) {
+        const key = `${r.kind}:${r.id}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(r);
+        }
       }
-    })();
+      setItems(merged);
+      setPage(0);
+    } catch {
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    const id = setTimeout(() => void load(), 0);
+    return () => clearTimeout(id);
+  }, [load]);
+
+  const filtered = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    const out = items.filter((b) => {
+      if (kind !== "all" && b.kind !== kind) return false;
+      if (statusFilter !== "all") {
+        const s = String(b.status || "").toLowerCase();
+        if (s !== statusFilter.toLowerCase()) return false;
+      }
+      if (!query) return true;
+      const title = String(b.title || "").toLowerCase();
+      const cust = String(b.customer_name || "").toLowerCase();
+      const email = String(b.customer_email || "").toLowerCase();
+      const dest = String(b.destination || "").toLowerCase();
+      const idStr = `#${b.id}`;
+      return title.includes(query) || cust.includes(query) || email.includes(query) || dest.includes(query) || idStr.includes(query);
+    });
+    out.sort((a, b) => {
+      const at = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
+      if (sort === "newest" || sort === "oldest") return sort === "newest" ? bt - at : at - bt;
+      return sort === "high" ? Number(b.price || 0) - Number(a.price || 0) : Number(a.price || 0) - Number(b.price || 0);
+    });
+    return out;
+  }, [items, kind, q, sort, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageIndex = Math.min(page, totalPages - 1);
+  const pageItems = useMemo(
+    () => filtered.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize),
+    [filtered, pageIndex],
+  );
+
+  const exportCsv = () => {
+    const esc = (v: unknown) => {
+      const s = String(v ?? "");
+      if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+    const rows = [
+      ["id", "kind", "status", "title", "destination", "agency", "customer", "email", "travel_date", "people", "price", "currency", "payment_status", "created_at"],
+      ...filtered.map((b) => [
+        b.id, b.kind, b.status, b.title, b.destination, b.agency_name, b.customer_name, b.customer_email || "",
+        b.travel_date || "", b.people ?? "", b.price || 0, b.currency, b.payment_status || "", b.created_at || "",
+      ]),
+    ];
+    const csv = rows.map((r) => r.map(esc).join(",")).join("\r\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `admin-bookings-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleAdminSetStatus = async (b: any, next: string) => {
+    setActing(true);
+    setNotice(null);
+    try {
+      if (b.kind === "package") {
+        const note = prompt(t("admin_booking_status_note_prompt")) || "";
+        const updated = await api.bookings.adminSetStatus(b.id, next, note.trim() || null);
+        setItems((prev) =>
+          prev.map((x) =>
+            x.kind === "package" && x.id === b.id ? { ...x, status: (updated as any)?.status || next } : x,
+          ),
+        );
+      } else {
+        const fn = (api.tripMarketplace as any).setBookingStatus;
+        if (typeof fn === "function") {
+          await fn(b.id, { status: next });
+        }
+        setItems((prev) => prev.map((x) => (x.kind === "custom" && x.id === b.id ? { ...x, status: next } : x)));
+      }
+      setNotice({ type: "success", text: t("common_notice_updated") });
+    } catch {
+      setNotice({ type: "error", text: t("admin_booking_action_failed") });
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const statusBadge = (s: string) => {
+    const low = String(s || "").toLowerCase();
+    if (/^(accepted|confirmed|in_progress|completed|paid|payment_received)$/.test(low)) return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (/^(cancelled|rejected|refunded|declined|expired)$/.test(low)) return "bg-red-50 text-red-700 border-red-200";
+    if (/^(pending|payment_pending|draft|submitted|searching_agencies|receiving_offers|comparing_offers|refund_requested|disputed)$/.test(low)) return "bg-amber-50 text-amber-800 border-amber-200";
+    return "bg-gray-50 text-gray-700 border-gray-200";
+  };
+
   return (
-    <DashboardShell title={t("admin_nav_bookings")} subtitle={t("admin_booking_requests")} nav={nav}>
+    <DashboardShell title={t("admin_nav_bookings")} subtitle={`${filtered.length} bookings`} nav={nav}>
       <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-10 pt-6">
-          <NoticeBanner notice={notice} />
+        <div className="px-10 py-8 border-b border-gray-50 bg-gray-50/30">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="text-lg font-black text-gray-900">{t("admin_booking_requests")}</div>
+            <div className="flex flex-wrap gap-2 items-center">
+              <button type="button" onClick={exportCsv} disabled={loading || filtered.length === 0} className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition disabled:opacity-60">
+                Export CSV
+              </button>
+              <button type="button" disabled={loading || acting} onClick={() => void load()} className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition disabled:opacity-60">
+                {t("admin_users_refresh")}
+              </button>
+            </div>
+          </div>
+          <div className="mt-4">
+            <NoticeBanner notice={notice} />
+          </div>
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-3">
+            <div className="lg:col-span-5">
+              <input
+                value={q}
+                onChange={(e) => { setQ(e.target.value); setPage(0); }}
+                placeholder="Search booking, customer, destination…"
+                className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-3 font-bold text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="lg:col-span-2">
+              <select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); setPage(0); }} className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 font-black text-gray-900 focus:ring-2 focus:ring-blue-500">
+                <option value="all">All types</option>
+                <option value="package">Package</option>
+                <option value="custom">Custom Trip</option>
+              </select>
+            </div>
+            <div className="lg:col-span-3">
+              <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }} className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 font-black text-gray-900 focus:ring-2 focus:ring-blue-500">
+                <option value="all">{t("common_all_statuses")}</option>
+                {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="lg:col-span-2">
+              <select value={sort} onChange={(e) => { setSort(e.target.value as typeof sort); setPage(0); }} className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 font-black text-gray-900 focus:ring-2 focus:ring-blue-500">
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="high">Highest price</option>
+                <option value="low">Lowest price</option>
+              </select>
+            </div>
+          </div>
         </div>
+
         {loading ? (
           <div className="p-10 text-center font-bold text-gray-500">{t("common_loading")}</div>
-        ) : items.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="p-10 text-center">
             <div className="text-6xl">🧾</div>
             <div className="mt-4 text-xl font-black text-gray-900">{t("admin_booking_none")}</div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/50">
-                  <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">
-                    {t("admin_booking_table_package")}
-                  </th>
-                  <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">
-                    {t("admin_booking_table_travel_date")}
-                  </th>
-                  <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">
-                    {t("admin_booking_table_people")}
-                  </th>
-                  <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">
-                    {t("admin_booking_table_actions")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {items.map((b) => (
-                  <tr key={b.id} className="hover:bg-gray-50/30 transition-colors">
-                    <td className="px-10 py-6">
-                      <div className="font-black text-gray-900">{b.package?.title || t("admin_booking_unknown_package")}</div>
-                      <div className="text-xs text-gray-400 mt-1">{t("admin_booking_order", { id: b.id })}</div>
-                    </td>
-                    <td className="px-10 py-6 text-gray-600 font-bold">{new Date(b.travel_date).toLocaleDateString()}</td>
-                    <td className="px-10 py-6 text-gray-600 font-bold">{b.number_of_people}</td>
-                    <td className="px-10 py-6">
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-black text-gray-900">{b.status}</span>
+          <>
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50/50">
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("common_id")} / Type</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_booking_table_package")}</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">Customer</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_booking_table_travel_date")}</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_booking_table_people")}</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">Amount</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">Status</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest text-right">{t("admin_booking_table_actions")}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {pageItems.map((b: any) => (
+                    <tr key={`${b.kind}-${b.id}`} className="hover:bg-gray-50/30 transition-colors">
+                      <td className="px-10 py-6">
+                        <div className="font-black text-gray-900">#{b.id}</div>
+                        <span className={`mt-1 inline-block text-[10px] font-black uppercase tracking-widest rounded-full border px-2 py-0.5 ${b.kind === "package" ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200"}`}>
+                          {b.kind}
+                        </span>
+                      </td>
+                      <td className="px-10 py-6">
+                        <div className="font-black text-gray-900 max-w-md truncate">{b.title}</div>
+                        {b.destination ? <div className="text-xs text-gray-400 mt-1">{b.destination}{b.agency_name ? ` • ${b.agency_name}` : ""}</div> : null}
+                      </td>
+                      <td className="px-10 py-6">
+                        <div className="font-black text-gray-900">{b.customer_name || "—"}</div>
+                        {b.customer_email ? <div className="text-xs text-gray-400 mt-1 truncate max-w-[180px]">{b.customer_email}</div> : null}
+                      </td>
+                      <td className="px-10 py-6 text-gray-600 font-bold">
+                        {b.travel_date ? new Date(b.travel_date).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="px-10 py-6 text-gray-600 font-bold">{b.people ?? "—"}</td>
+                      <td className="px-10 py-6 text-gray-900 font-black whitespace-nowrap">
+                        {formatMoney(Number(b.price || 0), (b.currency || "USD") as any)}
+                        {b.payment_status ? <div className="text-xs text-gray-400 mt-1">{b.payment_status}</div> : null}
+                      </td>
+                      <td className="px-10 py-6">
+                        <span className={`text-xs font-black px-3 py-1 rounded-full border ${statusBadge(b.status)}`}>{b.status || "—"}</span>
+                      </td>
+                      <td className="px-10 py-6 text-right">
                         <select
-                          value={b.status}
+                          value={b.status || ""}
                           disabled={acting}
-                          onChange={(e) => {
-                            const next = e.target.value;
-                            void (async () => {
-                              try {
-                                setActing(true);
-                                setNotice(null);
-                                const note = prompt(t("admin_booking_status_note_prompt")) || "";
-                                const updated = await api.bookings.adminSetStatus(b.id, next, note.trim() || null);
-                                setItems((prev) => prev.map((x) => (x.id === b.id ? updated : x)));
-                                setNotice({ type: "success", text: t("common_notice_updated") });
-                              } catch {
-                                setNotice({ type: "error", text: t("admin_booking_action_failed") });
-                              } finally {
-                                setActing(false);
-                              }
-                            })();
-                          }}
+                          onChange={(e) => void handleAdminSetStatus(b, e.target.value)}
                           className="border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold bg-white disabled:opacity-60"
                         >
-                          {statuses.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          ))}
+                          <option value="" disabled>Set status…</option>
+                          {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="md:hidden divide-y divide-gray-50">
+              {pageItems.map((b: any) => (
+              <div key={`${b.kind}-${b.id}`} className="px-6 py-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-black text-gray-900 min-h-[44px] flex items-center">
+                  #{b.id}
+                  <span className={`ml-2 inline-block text-[10px] font-black uppercase tracking-widest rounded-full border px-2 py-0.5 ${b.kind === "package" ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200"}`}>
+                    {b.kind}
+                  </span>
+                </div>
+                <span className={`text-xs font-black px-3 py-1 rounded-full border ${statusBadge(b.status)}`}>{b.status || "—"}</span>
+                </div>
+                <div className="mt-3 font-black text-gray-900 break-words">{b.title}</div>
+                {b.destination ? <div className="mt-1 text-sm text-gray-500">{b.destination}{b.agency_name ? ` • ${b.agency_name}` : ""}</div> : null}
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <div className="text-gray-400 font-black text-[10px] uppercase tracking-widest">Customer</div>
+                    <div className="font-bold text-gray-800">{b.customer_name || "—"}</div>
+                    {b.customer_email ? <div className="text-gray-500 truncate">{b.customer_email}</div> : null}
+                  </div>
+                  <div>
+                    <div className="text-gray-400 font-black text-[10px] uppercase tracking-widest">Travel</div>
+                    <div className="font-bold text-gray-800">{b.travel_date ? new Date(b.travel_date).toLocaleDateString() : "—"}</div>
+                    <div className="text-gray-500">People: {b.people ?? "—"}</div>
+                  </div>
+                  <div className="col-span-2 mt-1">
+                    <div className="text-gray-400 font-black text-[10px] uppercase tracking-widest">Amount / Payment</div>
+                    <div className="font-black text-gray-900">{formatMoney(Number(b.price || 0), (b.currency || "USD") as any)} {b.payment_status ? <span className="text-gray-500 font-bold ml-2">({b.payment_status})</span> : null}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <select
+                    value={b.status || ""}
+                    disabled={acting}
+                    onChange={(e) => void handleAdminSetStatus(b, e.target.value)}
+                    className="w-full min-h-[44px] border border-gray-200 rounded-2xl px-3 py-2 text-sm font-bold bg-white disabled:opacity-60"
+                  >
+                    <option value="" disabled>Set status…</option>
+                    {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+            ))}
+            </div>
+          </>
         )}
+        {!loading && filtered.length > 0 ? (
+          <div className="px-10 py-6 border-t border-gray-50 flex items-center justify-between">
+            <div className="text-xs font-black text-gray-500">{t("common_page_of", { page: pageIndex + 1, total: totalPages })}</div>
+            <div className="flex gap-2">
+              <button type="button" disabled={pageIndex <= 0} onClick={() => setPage((p) => Math.max(0, p - 1))} className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition disabled:opacity-60">{t("common_prev")}</button>
+              <button type="button" disabled={pageIndex >= totalPages - 1} onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition disabled:opacity-60">{t("common_next")}</button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </DashboardShell>
   );
@@ -738,69 +991,222 @@ function AdminNotifications() {
   const { t } = useLanguage();
   const nav = useMemo(() => adminNav(t), [t]);
   const [loading, setLoading] = useState(true);
+  const [acting, setActing] = useState(false);
   const [items, setItems] = useState<import("@/lib/api").Notification[]>([]);
+  const [cat, setCat] = useState<string>("all");
+  const [read, setRead] = useState<"all" | "unread" | "read">("all");
+  const [q, setQ] = useState("");
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        setLoading(true);
-        const rows = await api.notifications.list();
-        setItems(rows);
-      } catch {
-        setItems([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const rows = await api.notifications.list();
+      setItems(Array.isArray(rows) ? rows : []);
+    } catch {
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    const id = setTimeout(() => void load(), 0);
+    return () => clearTimeout(id);
+  }, [load]);
+
+  const categories = useMemo(() => {
+    const set = new Set<string>(["all"]);
+    for (const n of items) {
+      const kind = (n as any).category || (n as any).kind || (n as any).type || "system";
+      set.add(String(kind));
+    }
+    return Array.from(set).slice(0, 12);
+  }, [items]);
+
+  const filtered = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    return items.filter((n) => {
+      if (read === "unread" && n.is_read) return false;
+      if (read === "read" && !n.is_read) return false;
+      if (cat !== "all") {
+        const kind = (n as any).category || (n as any).kind || (n as any).type || "system";
+        if (String(kind) !== cat) return false;
+      }
+      if (!query) return true;
+      const title = String(n.title || "").toLowerCase();
+      const body = String(n.body || "").toLowerCase();
+      const link = String((n as any).link || (n as any).link_url || "").toLowerCase();
+      return title.includes(query) || body.includes(query) || link.includes(query);
+    });
+  }, [cat, items, q, read]);
+
+  const unreadCount = useMemo(() => items.filter((n) => !n.is_read).length, [items]);
+
+  const markOne = async (n: import("@/lib/api").Notification) => {
+    if (n.is_read) return;
+    setActing(true);
+    try {
+      await api.notifications.markRead([n.id]);
+      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const markAll = async () => {
+    setActing(true);
+    try {
+      const res = await api.notifications.markAllRead();
+      setItems((prev) => prev.map((x) => ({ ...x, is_read: true })));
+      void res;
+    } catch {
+      // fall back to mark only visible ones
+      try {
+        const ids = filtered.filter((n) => !n.is_read).map((n) => n.id);
+        if (ids.length > 0) await api.notifications.markRead(ids);
+        setItems((prev) => prev.map((x) => (ids.includes(x.id) ? { ...x, is_read: true } : x)));
+      } catch {
+        // ignore
+      }
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const navigateTo = (n: import("@/lib/api").Notification) => {
+    const link = (n as any).link || (n as any).link_url;
+    if (!link) return;
+    void markOne(n);
+    setTimeout(() => {
+      if (typeof window !== "undefined") window.location.href = link;
+    }, 100);
+  };
+
   return (
-    <DashboardShell title={t("admin_nav_notifications")} subtitle={t("dash_notifications_subtitle")} nav={nav}>
+    <DashboardShell title={t("admin_nav_notifications")} subtitle={`${unreadCount} unread • ${items.length} total`} nav={nav}>
       <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm p-8">
-        {loading ? (
-          <div className="py-12 text-center font-bold text-gray-500">{t("common_loading")}</div>
-        ) : items.length === 0 ? (
-          <div className="py-12 text-center">
-            <div className="text-6xl">🔔</div>
-            <div className="mt-4 text-xl font-black text-gray-900">{t("dash_notifications_empty_title")}</div>
-            <div className="mt-2 text-gray-500 font-medium">{t("dash_notifications_empty_subtitle")}</div>
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="text-lg font-black text-gray-900">{t("admin_nav_notifications")}</div>
+          <div className="flex flex-wrap gap-2 items-center">
+            <button
+              type="button"
+              onClick={() => void markAll()}
+              disabled={acting || loading || unreadCount === 0}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-black px-4 py-2 rounded-2xl transition shadow-sm shadow-blue-200 disabled:opacity-60"
+            >
+              {t("dash_notifications_mark_all_read")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void load()}
+              disabled={loading}
+              className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition disabled:opacity-60"
+            >
+              {t("admin_users_refresh")}
+            </button>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {items.map((n) => (
-              <div
-                key={n.id}
-                className={`rounded-2xl border p-5 ${n.is_read ? "bg-white border-gray-100" : "bg-blue-50/50 border-blue-100"}`}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="font-black text-gray-900">{n.title}</div>
-                    {n.body ? <div className="mt-2 text-gray-600 font-bold">{n.body}</div> : null}
-                    <div className="mt-3 text-xs font-black text-gray-400">{new Date(n.created_at).toLocaleString()}</div>
-                  </div>
-                  {!n.is_read ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void (async () => {
-                          try {
-                            await api.notifications.markRead([n.id]);
-                            setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
-                          } catch {
-                            return;
+        </div>
+        <div className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-3">
+          <div className="lg:col-span-5">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search notifications…"
+              className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-3 font-bold text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="lg:col-span-4">
+            <select
+              value={cat}
+              onChange={(e) => setCat(e.target.value)}
+              className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 font-black text-gray-900 focus:ring-2 focus:ring-blue-500"
+            >
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  Category: {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="lg:col-span-3">
+            <select
+              value={read}
+              onChange={(e) => setRead(e.target.value as typeof read)}
+              className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 font-black text-gray-900 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All read state</option>
+              <option value="unread">Unread only</option>
+              <option value="read">Read only</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          {loading ? (
+            <div className="py-12 text-center font-bold text-gray-500">{t("common_loading")}</div>
+          ) : filtered.length === 0 ? (
+            <div className="py-12 text-center">
+              <div className="text-6xl">🔔</div>
+              <div className="mt-4 text-xl font-black text-gray-900">{t("dash_notifications_empty_title")}</div>
+              <div className="mt-2 text-gray-500 font-medium">{t("dash_notifications_empty_subtitle")}</div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filtered.map((n) => {
+                const kind = (n as any).category || (n as any).kind || (n as any).type || "system";
+                const link = (n as any).link || (n as any).link_url;
+                return (
+                  <div
+                    key={n.id}
+                    role={link ? "button" : undefined}
+                    tabIndex={link ? 0 : undefined}
+                    onClick={link ? () => navigateTo(n) : undefined}
+                    onKeyDown={
+                      link
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") navigateTo(n);
                           }
-                        })();
-                      }}
-                      className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition"
-                    >
-                      {t("dash_notifications_mark_read")}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+                        : undefined
+                    }
+                    className={`rounded-2xl border p-5 ${n.is_read ? "bg-white border-gray-100" : "bg-blue-50/50 border-blue-100"} ${
+                      link ? "cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition" : ""
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {!n.is_read ? (
+                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-600 shadow-[0_0_0_3px_rgba(37,99,235,0.18)]" aria-label="unread" />
+                          ) : null}
+                          <div className="font-black text-gray-900 truncate">{n.title}</div>
+                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5">
+                            {kind}
+                          </span>
+                        </div>
+                        {n.body ? <div className="mt-2 text-gray-600 font-bold break-words">{n.body}</div> : null}
+                        <div className="mt-3 text-xs font-black text-gray-400">
+                          {new Date(n.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                      {!n.is_read ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void markOne(n);
+                          }}
+                          className="shrink-0 bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition min-h-[44px]"
+                        >
+                          {t("dash_notifications_mark_read")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </DashboardShell>
   );
@@ -1507,6 +1913,7 @@ function AdminPackages() {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [items, setItems] = useState<import("@/lib/api").Package[]>([]);
+  const [selected, setSelected] = useState<Record<number, boolean>>({});
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "draft" | "expired" | "archived">("all");
   const [sort, setSort] = useState<"newest" | "oldest" | "low" | "high" | "az" | "za">("newest");
@@ -1524,6 +1931,7 @@ function AdminPackages() {
         if (batch.length < 100) break;
       }
       setItems(all);
+      setSelected({});
       setPage(0);
     } catch {
       setItems([]);
@@ -1574,6 +1982,48 @@ function AdminPackages() {
   const pageIndex = Math.min(page, totalPages - 1);
   const pageItems = useMemo(() => filtered.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize), [filtered, pageIndex]);
 
+  const selectedIds = useMemo(
+    () => Object.entries(selected).filter(([, v]) => v).map(([k]) => Number(k)).filter((n) => Number.isFinite(n)),
+    [selected]
+  );
+
+  const toggleAllPage = (checked: boolean) => {
+    setSelected((prev) => {
+      const next = { ...prev };
+      for (const u of pageItems) next[u.id] = checked;
+      return next;
+    });
+  };
+
+  const allPageSelected = pageItems.length > 0 && pageItems.every((p) => selected[p.id]);
+
+  const bulkStatus = async (targetStatus: "draft" | "active" | "expired" | "archived") => {
+    if (selectedIds.length === 0) return;
+    const confirmMsg =
+      targetStatus === "archived"
+        ? `Archive ${selectedIds.length} packages?`
+        : `Set ${selectedIds.length} packages to ${targetStatus}?`;
+    if (!confirm(confirmMsg)) return;
+    setActing(true);
+    setNotice(null);
+    let ok = 0;
+    try {
+      for (const id of selectedIds) {
+        try {
+          const upd = await api.packages.setStatus(id, { status: targetStatus });
+          setItems((prev) => prev.map((p) => (p.id === id ? upd : p)));
+          ok++;
+        } catch {
+          // continue
+        }
+      }
+      setNotice({ type: ok > 0 ? "success" : "error", text: ok > 0 ? `${ok} packages updated` : t("admin_action_failed") });
+      setSelected({});
+    } finally {
+      setActing(false);
+    }
+  };
+
   const handleSetStatus = async (id: number, status: "draft" | "active" | "expired" | "archived") => {
     setActing(true);
     setNotice(null);
@@ -1600,6 +2050,15 @@ function AdminPackages() {
     } finally {
       setActing(false);
     }
+  };
+
+  const statusBadgeCls = (s: string) => {
+    const low = String(s || "").toLowerCase();
+    if (low === "active") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (low === "draft") return "bg-blue-50 text-blue-700 border-blue-200";
+    if (low === "expired") return "bg-amber-50 text-amber-800 border-amber-200";
+    if (low === "archived") return "bg-gray-100 text-gray-600 border-gray-200";
+    return "bg-gray-50 text-gray-700 border-gray-200";
   };
 
   return (
@@ -1658,6 +2117,26 @@ function AdminPackages() {
               </select>
             </div>
           </div>
+          {selectedIds.length > 0 ? (
+            <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+              <span className="font-black text-blue-900 text-sm">{selectedIds.length} selected</span>
+              <button type="button" disabled={acting} onClick={() => void bulkStatus("active")} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-black px-4 py-2 rounded-xl text-sm transition">
+                Bulk Activate
+              </button>
+              <button type="button" disabled={acting} onClick={() => void bulkStatus("draft")} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-black px-4 py-2 rounded-xl text-sm transition">
+                Bulk Draft
+              </button>
+              <button type="button" disabled={acting} onClick={() => void bulkStatus("expired")} className="bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-black px-4 py-2 rounded-xl text-sm transition">
+                Bulk Expire
+              </button>
+              <button type="button" disabled={acting} onClick={() => void bulkStatus("archived")} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white font-black px-4 py-2 rounded-xl text-sm transition">
+                Bulk Archive
+              </button>
+              <button type="button" disabled={acting} onClick={() => setSelected({})} className="bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60 text-gray-700 font-black px-4 py-2 rounded-xl text-sm transition ml-auto">
+                Clear
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {loading ? (
@@ -1668,74 +2147,157 @@ function AdminPackages() {
             <div className="mt-4 text-xl font-black text-gray-900">{t("admin_packages_empty")}</div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/50">
-                  <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("common_id")}</th>
-                  <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_packages_table_package")}</th>
-                  <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_table_status")}</th>
-                  <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_packages_table_price")}</th>
-                  <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest text-right">{t("admin_users_table_actions")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {pageItems.map((p) => {
-                  const base = (p.base_currency as import("@/context/LanguageContext").Currency) || "USD";
-                  const status = (p.status || "active").toLowerCase();
-                  const statusLabel =
-                    status === "draft" || status === "active" || status === "expired" || status === "archived"
-                      ? t(`package_status_${status}`)
-                      : status;
-                  return (
-                    <tr key={p.id} className="hover:bg-gray-50/30 transition-colors">
-                      <td className="px-10 py-6 text-gray-600 font-bold">{p.id}</td>
-                      <td className="px-10 py-6">
-                        <div className="font-black text-gray-900">{p.title}</div>
-                        <div className="text-xs text-gray-400 mt-1">
-                          {(p.city || p.country || p.destination) ? [p.city, p.country, p.destination].filter(Boolean).join(" • ") : "—"}
+          <>
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50/50">
+                    <th className="px-6 py-5 w-10">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all packages on page"
+                        checked={allPageSelected}
+                        onChange={(e) => toggleAllPage(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                    </th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("common_id")}</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_packages_table_package")}</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_table_status")}</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_packages_table_price")}</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest text-right">{t("admin_users_table_actions")}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {pageItems.map((p) => {
+                    const base = (p.base_currency as import("@/context/LanguageContext").Currency) || "USD";
+                    const status = (p.status || "active").toLowerCase();
+                    const statusLabel =
+                      status === "draft" || status === "active" || status === "expired" || status === "archived"
+                        ? t(`package_status_${status}`)
+                        : status;
+                    return (
+                      <tr key={p.id} className="hover:bg-gray-50/30 transition-colors">
+                        <td className="px-6 py-6">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select package ${p.id}`}
+                            checked={Boolean(selected[p.id])}
+                            onChange={(e) => setSelected((prev) => ({ ...prev, [p.id]: e.target.checked }))}
+                            className="h-4 w-4 rounded border-gray-300"
+                          />
+                        </td>
+                        <td className="px-10 py-6 text-gray-600 font-bold">{p.id}</td>
+                        <td className="px-10 py-6">
+                          <div className="font-black text-gray-900">{p.title}</div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            {(p.city || p.country || p.destination) ? [p.city, p.country, p.destination].filter(Boolean).join(" • ") : "—"}
+                            {p.agency?.name ? ` • ${p.agency.name}` : ""}
+                          </div>
+                        </td>
+                        <td className="px-10 py-6">
+                          <span className={`text-xs font-black px-3 py-1 rounded-full border ${statusBadgeCls(status)}`}>{statusLabel}</span>
+                        </td>
+                        <td className="px-10 py-6 text-gray-900 font-black">{formatCurrency(Number(p.price || 0), base)}</td>
+                        <td className="px-10 py-6 text-right">
+                          <div className="flex justify-end gap-2 flex-wrap">
+                            <Link
+                              href={`/packages/${p.id}`}
+                              prefetch={false}
+                              title={t("admin_action_view_package")}
+                              aria-label={t("admin_action_view_package")}
+                              className="h-10 w-10 inline-flex items-center justify-center rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-800 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                            >
+                              <Icon d="M12 5c4.5 0 8.27 2.74 10 7-1.73 4.26-5.5 7-10 7S3.73 16.26 2 12c1.73-4.26 5.5-7 10-7Zm0 2c-3.3 0-6.2 1.86-7.74 5 1.54 3.14 4.44 5 7.74 5s6.2-1.86 7.74-5C18.2 8.86 15.3 7 12 7Zm0 2.5A2.5 2.5 0 1 1 9.5 12 2.5 2.5 0 0 1 12 9.5Z" />
+                            </Link>
+                            <ActionIconButton title={t("common_duplicate")} disabled={acting} onClick={() => void handleDuplicate(p.id)}>
+                              <Icon d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1Zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2Zm0 16H10V7h9v14Z" />
+                            </ActionIconButton>
+                            {status !== "archived" ? (
+                              <ActionIconButton title={t("common_archive")} disabled={acting} onClick={() => void handleSetStatus(p.id, "archived")}>
+                                <Icon d="M20.54 5.23 19.15 3.5A2 2 0 0 0 17.58 2H6.42a2 2 0 0 0-1.57.73L3.46 5.23A2 2 0 0 0 3 6.5V20a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.5a2 2 0 0 0-.46-1.27ZM6.42 4h11.16l1.2 1.5H5.22L6.42 4ZM19 20H5V8h14v12Zm-9-9h4v2h-4v-2Z" />
+                              </ActionIconButton>
+                            ) : (
+                              <ActionIconButton title={t("admin_action_restore_to_draft")} disabled={acting} onClick={() => void handleSetStatus(p.id, "draft")}>
+                                <Icon d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6a6 6 0 0 1-6 6 6 6 0 0 1-5.65-4H4.26A8 8 0 0 0 12 21a8 8 0 0 0 0-16Z" />
+                              </ActionIconButton>
+                            )}
+                            {status !== "active" ? (
+                              <ActionIconButton title={t("common_activate")} tone="primary" disabled={acting} onClick={() => void handleSetStatus(p.id, "active")}>
+                                <Icon d="M9.55 16.2 4.8 11.45l1.4-1.4 3.35 3.35 8.25-8.25 1.4 1.4-9.65 9.65Z" />
+                              </ActionIconButton>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="md:hidden divide-y divide-gray-50">
+              {pageItems.map((p) => {
+                const base = (p.base_currency as import("@/context/LanguageContext").Currency) || "USD";
+                const status = (p.status || "active").toLowerCase();
+                const statusLabel =
+                  status === "draft" || status === "active" || status === "expired" || status === "archived"
+                    ? t(`package_status_${status}`)
+                    : status;
+                return (
+                  <div key={p.id} className="px-6 py-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <label className="flex items-center gap-3 min-h-[44px]">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select package ${p.id}`}
+                          checked={Boolean(selected[p.id])}
+                          onChange={(e) => setSelected((prev) => ({ ...prev, [p.id]: e.target.checked }))}
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                        <div>
+                          <div className="font-black text-gray-900">#{p.id}</div>
+                          <span className={`inline-block mt-1 text-xs font-black px-3 py-1 rounded-full border ${statusBadgeCls(status)}`}>{statusLabel}</span>
                         </div>
-                      </td>
-                      <td className="px-10 py-6">
-                        <span className="text-xs font-black px-3 py-1 rounded-full bg-gray-100 text-gray-700">{statusLabel}</span>
-                      </td>
-                      <td className="px-10 py-6 text-gray-900 font-black">{formatCurrency(Number(p.price || 0), base)}</td>
-                      <td className="px-10 py-6 text-right">
-                        <div className="flex justify-end gap-2 flex-wrap">
-                          <Link
-                            href={`/packages/${p.id}`}
-                            prefetch={false}
-                            title={t("admin_action_view_package")}
-                            aria-label={t("admin_action_view_package")}
-                            className="h-10 w-10 inline-flex items-center justify-center rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-800 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                          >
-                            <Icon d="M12 5c4.5 0 8.27 2.74 10 7-1.73 4.26-5.5 7-10 7S3.73 16.26 2 12c1.73-4.26 5.5-7 10-7Zm0 2c-3.3 0-6.2 1.86-7.74 5 1.54 3.14 4.44 5 7.74 5s6.2-1.86 7.74-5C18.2 8.86 15.3 7 12 7Zm0 2.5A2.5 2.5 0 1 1 9.5 12 2.5 2.5 0 0 1 12 9.5Z" />
-                          </Link>
-                          <ActionIconButton title={t("common_duplicate")} disabled={acting} onClick={() => void handleDuplicate(p.id)}>
-                            <Icon d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1Zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2Zm0 16H10V7h9v14Z" />
-                          </ActionIconButton>
-                          {status !== "archived" ? (
-                            <ActionIconButton title={t("common_archive")} disabled={acting} onClick={() => void handleSetStatus(p.id, "archived")}>
-                              <Icon d="M20.54 5.23 19.15 3.5A2 2 0 0 0 17.58 2H6.42a2 2 0 0 0-1.57.73L3.46 5.23A2 2 0 0 0 3 6.5V20a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.5a2 2 0 0 0-.46-1.27ZM6.42 4h11.16l1.2 1.5H5.22L6.42 4ZM19 20H5V8h14v12Zm-9-9h4v2h-4v-2Z" />
-                            </ActionIconButton>
-                          ) : (
-                            <ActionIconButton title={t("admin_action_restore_to_draft")} disabled={acting} onClick={() => void handleSetStatus(p.id, "draft")}>
-                              <Icon d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6a6 6 0 0 1-6 6 6 6 0 0 1-5.65-4H4.26A8 8 0 0 0 12 21a8 8 0 0 0 0-16Z" />
-                            </ActionIconButton>
-                          )}
-                          {status !== "active" ? (
-                            <ActionIconButton title={t("common_activate")} tone="primary" disabled={acting} onClick={() => void handleSetStatus(p.id, "active")}>
-                              <Icon d="M9.55 16.2 4.8 11.45l1.4-1.4 3.35 3.35 8.25-8.25 1.4 1.4-9.65 9.65Z" />
-                            </ActionIconButton>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </label>
+                    </div>
+                    <div className="mt-3 font-black text-gray-900 break-words">{p.title}</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      {(p.city || p.country || p.destination) ? [p.city, p.country, p.destination].filter(Boolean).join(" • ") : "—"}
+                      {p.agency?.name ? ` • ${p.agency.name}` : ""}
+                    </div>
+                    <div className="mt-3 font-black text-gray-900">{formatCurrency(Number(p.price || 0), base)}</div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Link
+                        href={`/packages/${p.id}`}
+                        prefetch={false}
+                        className="min-h-[44px] px-4 inline-flex items-center justify-center rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-800 font-black transition"
+                      >
+                        {t("admin_action_view_package")}
+                      </Link>
+                      <button type="button" disabled={acting} onClick={() => void handleDuplicate(p.id)} className="min-h-[44px] px-4 inline-flex items-center justify-center rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-800 font-black transition disabled:opacity-60">
+                        {t("common_duplicate")}
+                      </button>
+                      {status !== "archived" ? (
+                        <button type="button" disabled={acting} onClick={() => void handleSetStatus(p.id, "archived")} className="min-h-[44px] px-4 inline-flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-800 font-black transition disabled:opacity-60">
+                          {t("common_archive")}
+                        </button>
+                      ) : (
+                        <button type="button" disabled={acting} onClick={() => void handleSetStatus(p.id, "draft")} className="min-h-[44px] px-4 inline-flex items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 font-black transition disabled:opacity-60">
+                          {t("admin_action_restore_to_draft")}
+                        </button>
+                      )}
+                      {status !== "active" ? (
+                        <button type="button" disabled={acting} onClick={() => void handleSetStatus(p.id, "active")} className="min-h-[44px] px-4 inline-flex items-center justify-center rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black transition disabled:opacity-60">
+                          {t("common_activate")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
         {!loading && filtered.length > 0 ? (
           <div className="px-10 py-6 border-t border-gray-50 flex items-center justify-between">
@@ -2052,9 +2614,50 @@ function AdminReports() {
     packages: number;
     packagesList: import("@/lib/api").Package[];
     bookings: number;
+    customBookings: number;
+    customRequests: number;
+    customOffers: number;
+    completedTrips: number;
+    acceptedOffers: number;
     gross: number;
+    customGross: number;
     byStatus: Record<string, number>;
+    countryCount: number;
+    monthly: { label: string; bookings: number; revenue: number; requests: number }[];
   } | null>(null);
+
+  const exportCsv = () => {
+    const esc = (v: unknown) => {
+      const s = String(v ?? "");
+      if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+    const rows = [
+      ["KPI", "Value"],
+      ["Users", data?.users ?? 0],
+      ["Agencies", data?.agencies ?? 0],
+      ["Packages", data?.packages ?? 0],
+      ["Countries (unique)", data?.countryCount ?? 0],
+      ["Package Bookings", data?.bookings ?? 0],
+      ["Custom Trip Requests", data?.customRequests ?? 0],
+      ["Custom Trip Offers", data?.customOffers ?? 0],
+      ["Custom Trip Bookings", data?.customBookings ?? 0],
+      ["Completed Trips", data?.completedTrips ?? 0],
+      ["Gross Revenue Package (USD)", data?.gross ?? 0],
+      ["Gross Revenue Custom (USD)", data?.customGross ?? 0],
+      ["Gross Revenue Total (USD)", (data?.gross ?? 0) + (data?.customGross ?? 0)],
+    ];
+    const csv = rows.map((r) => r.map(esc).join(",")).join("\r\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `admin-analytics-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -2079,13 +2682,16 @@ function AdminReports() {
             }
             return all;
           };
-          const [users, agencies, packages, bookings] = await Promise.all([
+          const [users, agencies, packages, bookings, tripReqs, tripOffers, tripBookings] = await Promise.all([
             fetchUsers(),
             api.agencies.getAll().catch(() => []),
             fetchPackages(),
             api.bookings.getAll().catch(() => []),
+            (api.tripMarketplace as any).adminListRequests?.().catch(() => []) ?? Promise.resolve([]),
+            (api.tripMarketplace as any).adminListOffers?.().catch(() => []) ?? Promise.resolve([]),
+            (api.tripMarketplace as any).adminListBookings?.().catch(() => []) ?? Promise.resolve([]),
           ]);
-          const rates: Record<string, number> = { USD: 1, EUR: 0.92, RUB: 92, TRY: 32, AZN: 1.7 };
+          const rates: Record<string, number> = { USD: 1, EUR: 0.92, RUB: 92, TRY: 32, AZN: 1.7, GBP: 0.79 };
           const toUsd = (amount: number, from?: string | null) => {
             const code = typeof from === "string" ? from.toUpperCase() : "USD";
             const rate = rates[code] || 1;
@@ -2096,19 +2702,81 @@ function AdminReports() {
             (sum, b) => sum + toUsd(Number(b.offered_total_price ?? b.total_price ?? 0), b.currency),
             0
           );
+          const customGross = (Array.isArray(tripBookings) ? tripBookings : []).reduce(
+            (sum: number, tb: any) =>
+              sum + toUsd(Number(tb.total_price ?? (tb as any).offer?.total_price ?? 0), tb.currency || (tb as any).offer?.currency),
+            0
+          );
+          const completedTrips = bookings.filter((b) =>
+            /^(completed|paid|payment_received)$/.test((b.status || "").toLowerCase()),
+          ).length + (Array.isArray(tripBookings) ? tripBookings.filter((tb: any) => /^(completed|paid|confirmed)$/.test((tb.status || "").toLowerCase())).length : 0);
+          const acceptedOffers = (Array.isArray(tripOffers) ? tripOffers : []).filter(
+            (o: any) => /^(accepted|confirmed|completed|paid|active)$/.test((o.status || "").toLowerCase()),
+          ).length;
           const byStatus: Record<string, number> = {};
           bookings.forEach((b) => {
             const s = (b.status || "unknown").toLowerCase();
             byStatus[s] = (byStatus[s] || 0) + 1;
           });
+          (Array.isArray(tripBookings) ? tripBookings : []).forEach((tb: any) => {
+            const s = `custom:${(tb.status || "unknown").toLowerCase()}`;
+            byStatus[s] = (byStatus[s] || 0) + 1;
+          });
+          const countrySet = new Set<string>();
+          (packages || []).forEach((p: any) => {
+            const c = ((p.country as string) || (p.destination as string) || "").trim();
+            if (c) countrySet.add(c);
+          });
+          const monthlyMap = new Map<string, { bookings: number; revenue: number; requests: number }>();
+          const pushMonth = (iso: string, bucket: "bookings" | "requests", revenue = 0) => {
+            if (!iso) return;
+            const d = new Date(iso);
+            if (!Number.isFinite(d.getTime())) return;
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+            if (!monthlyMap.has(key)) monthlyMap.set(key, { bookings: 0, revenue: 0, requests: 0 });
+            const cur = monthlyMap.get(key)!;
+            if (bucket === "bookings") {
+              cur.bookings += 1;
+              cur.revenue += revenue;
+            } else {
+              cur.requests += 1;
+            }
+          };
+          bookings.forEach((b: any) => {
+            const iso = b.accepted_at || b.booking_date || (b as any).created_at || null;
+            const amt = toUsd(Number(b.offered_total_price ?? b.total_price ?? 0), b.currency);
+            pushMonth(iso, "bookings", amt);
+          });
+          (Array.isArray(tripBookings) ? tripBookings : []).forEach((tb: any) => {
+            const iso = tb.created_at || null;
+            const amt = toUsd(Number(tb.total_price ?? (tb as any).offer?.total_price ?? 0), tb.currency || (tb as any).offer?.currency);
+            pushMonth(iso, "bookings", amt);
+          });
+          (Array.isArray(tripReqs) ? tripReqs : []).forEach((r: any) => {
+            pushMonth(r.created_at || null, "requests");
+          });
+          const months = Array.from(monthlyMap.entries())
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .slice(-12)
+            .map(([label, val]) => ({ label, ...val }));
+          // fill trailing months for a consistent 12-month tail
+          const tail = months.length > 0 ? months : [];
           setData({
             users: users.length,
             agencies: agencies.length,
             packages: packages.length,
             packagesList: packages,
             bookings: bookings.length,
+            customBookings: Array.isArray(tripBookings) ? tripBookings.length : 0,
+            customRequests: Array.isArray(tripReqs) ? tripReqs.length : 0,
+            customOffers: Array.isArray(tripOffers) ? tripOffers.length : 0,
+            completedTrips,
+            acceptedOffers,
             gross,
+            customGross,
             byStatus,
+            countryCount: countrySet.size,
+            monthly: tail,
           });
         } finally {
           setLoading(false);
@@ -2118,8 +2786,55 @@ function AdminReports() {
     return () => clearTimeout(id);
   }, []);
 
+  const conversionRate = useMemo(() => {
+    const total = (data?.bookings ?? 0) + (data?.customRequests ?? 0);
+    if (total === 0) return null;
+    const successes = (data?.bookings ?? 0) + (data?.customBookings ?? 0);
+    return Math.min(100, Math.round((successes / Math.max(1, total)) * 100));
+  }, [data]);
+
+  const offerAcceptRate = useMemo(() => {
+    const offers = data?.customOffers ?? 0;
+    if (offers === 0) return null;
+    return Math.min(100, Math.round(((data?.acceptedOffers ?? 0) / Math.max(1, offers)) * 100));
+  }, [data]);
+
+  const tripCompletion = useMemo(() => {
+    const bookingsTotal = (data?.bookings ?? 0) + (data?.customBookings ?? 0);
+    if (bookingsTotal === 0) return null;
+    return Math.min(100, Math.round(((data?.completedTrips ?? 0) / Math.max(1, bookingsTotal)) * 100));
+  }, [data]);
+
+  const SparkBar = ({ values, color = "#3b82f6" }: { values: number[]; color?: string }) => {
+    if (values.length === 0) return <div className="h-16 flex items-center justify-center text-xs font-black text-gray-400">No data</div>;
+    const max = Math.max(1, ...values.map((v) => Math.abs(v)));
+    return (
+      <div className="h-16 w-full flex items-end gap-1" role="img" aria-label="Sparkbar">
+        {values.map((v, i) => {
+          const h = Math.max(6, Math.round((v / max) * 64));
+          return (
+            <div key={i} className="flex-1 rounded-t-md transition" style={{ height: `${h}px`, backgroundColor: color }} />
+          );
+        })}
+      </div>
+    );
+  };
+
+  const bookingVals = useMemo(() => (data?.monthly || []).map((m) => m.bookings), [data]);
+  const revenueVals = useMemo(() => (data?.monthly || []).map((m) => m.revenue), [data]);
+  const requestVals = useMemo(() => (data?.monthly || []).map((m) => m.requests), [data]);
+  const monthLabels = useMemo(() => (data?.monthly || []).map((m) => m.label), [data]);
+  const totalGross = (data?.gross ?? 0) + (data?.customGross ?? 0);
+
   return (
     <DashboardShell title={t("admin_nav_analytics")} subtitle={t("admin_reports_subtitle")} nav={nav}>
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <div className="text-lg font-black text-gray-900">Analytics overview</div>
+        <button type="button" onClick={exportCsv} disabled={loading || !data} className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition disabled:opacity-60">
+          Export CSV
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
           <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_reports_users")}</div>
@@ -2132,26 +2847,128 @@ function AdminReports() {
         <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
           <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_reports_packages")}</div>
           <div className="mt-3 text-4xl font-black text-gray-900">{loading ? "…" : data?.packages ?? 0}</div>
+          <div className="mt-2 text-xs font-black text-gray-400">{loading ? "…" : `${data?.countryCount ?? 0} countries`}</div>
         </div>
         <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
           <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_reports_gmv")}</div>
           <div className="mt-3 text-4xl font-black text-blue-600">
-            {loading ? "…" : formatMoney(Number(data?.gross ?? 0), "USD")}
+            {loading ? "…" : formatMoney(totalGross, "USD")}
           </div>
+          {!loading && data ? (
+            <div className="mt-2 text-xs font-black text-gray-400">
+              Package {formatMoney(data.gross, "USD")} + Custom {formatMoney(data.customGross, "USD")}
+            </div>
+          ) : null}
+        </div>
+        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
+          <div className="text-xs font-black text-gray-400 uppercase tracking-widest">Bookings</div>
+          <div className="mt-3 text-4xl font-black text-gray-900">{loading ? "…" : (data?.bookings ?? 0) + (data?.customBookings ?? 0)}</div>
+          <div className="mt-2 text-xs font-black text-gray-400">Package {data?.bookings ?? 0} • Custom {data?.customBookings ?? 0}</div>
+        </div>
+        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
+          <div className="text-xs font-black text-gray-400 uppercase tracking-widest">Trip Requests</div>
+          <div className="mt-3 text-4xl font-black text-indigo-600">{loading ? "…" : data?.customRequests ?? 0}</div>
+        </div>
+        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
+          <div className="text-xs font-black text-gray-400 uppercase tracking-widest">Offers</div>
+          <div className="mt-3 text-4xl font-black text-fuchsia-600">{loading ? "…" : data?.customOffers ?? 0}</div>
+          {!loading && data ? (
+            <div className="mt-2 text-xs font-black text-gray-400">Accepted {data.acceptedOffers}</div>
+          ) : null}
+        </div>
+        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
+          <div className="text-xs font-black text-gray-400 uppercase tracking-widest">Completed Trips</div>
+          <div className="mt-3 text-4xl font-black text-emerald-600">{loading ? "…" : data?.completedTrips ?? 0}</div>
+        </div>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-black text-gray-400 uppercase tracking-widest">Conversion Rate</div>
+            <span className="text-xs font-black text-gray-400">bookings / inquiries</span>
+          </div>
+          <div className="mt-3 text-4xl font-black text-gray-900">
+            {loading ? "…" : conversionRate == null ? "—" : `${conversionRate}%`}
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-gray-100 overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all" style={{ width: `${conversionRate ?? 0}%` }} />
+          </div>
+        </div>
+        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-black text-gray-400 uppercase tracking-widest">Offer Acceptance</div>
+            <span className="text-xs font-black text-gray-400">accepted / total</span>
+          </div>
+          <div className="mt-3 text-4xl font-black text-gray-900">
+            {loading ? "…" : offerAcceptRate == null ? "—" : `${offerAcceptRate}%`}
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-gray-100 overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-fuchsia-500 to-emerald-500 transition-all" style={{ width: `${offerAcceptRate ?? 0}%` }} />
+          </div>
+        </div>
+        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-black text-gray-400 uppercase tracking-widest">Trip Completion</div>
+            <span className="text-xs font-black text-gray-400">completed / bookings</span>
+          </div>
+          <div className="mt-3 text-4xl font-black text-gray-900">
+            {loading ? "…" : tripCompletion == null ? "—" : `${tripCompletion}%`}
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-gray-100 overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-600 transition-all" style={{ width: `${tripCompletion ?? 0}%` }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-black text-gray-900">Bookings (last months)</div>
+          </div>
+          <div className="mt-4"><SparkBar values={bookingVals} color="#6366f1" /></div>
+          <div className="mt-2 flex justify-between text-[10px] font-black text-gray-400 truncate gap-1">
+            {monthLabels.slice(0, 1).map((m) => <span key={`s-${m}`}>{m}</span>)}
+            <span className="ml-auto">{monthLabels.slice(-1).map((m) => m).join("") || "—"}</span>
+          </div>
+        </div>
+        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-black text-gray-900">Revenue USD (last months)</div>
+          </div>
+          <div className="mt-4"><SparkBar values={revenueVals} color="#3b82f6" /></div>
+          <div className="mt-2 text-[10px] font-black text-gray-400">Sample {revenueVals.length} months</div>
+        </div>
+        <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-7">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-black text-gray-900">Custom Requests (last months)</div>
+          </div>
+          <div className="mt-4"><SparkBar values={requestVals} color="#d946ef" /></div>
+          <div className="mt-2 text-[10px] font-black text-gray-400">Sample {requestVals.length} months</div>
         </div>
       </div>
 
       <div className="mt-6 bg-white rounded-[2.5rem] border border-gray-100 shadow-sm p-8">
         <div className="text-lg font-black text-gray-900">{t("admin_reports_booking_breakdown")}</div>
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {Object.entries(data?.byStatus || {})
             .sort((a, b) => b[1] - a[1])
-            .map(([status, count]) => (
-              <div key={status} className="bg-gray-50 rounded-2xl border border-gray-100 p-5">
-                <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{status}</div>
-                <div className="mt-2 text-3xl font-black text-gray-900">{count}</div>
-              </div>
-            ))}
+            .map(([status, count]) => {
+              const max = Math.max(1, ...Object.values(data?.byStatus || { count }));
+              const pct = Math.min(100, Math.round((count / max) * 100));
+              return (
+                <div key={status} className="bg-gray-50 rounded-2xl border border-gray-100 p-5">
+                  <div className="text-xs font-black text-gray-400 uppercase tracking-widest truncate">{status}</div>
+                  <div className="mt-2 text-3xl font-black text-gray-900">{count}</div>
+                  <div className="mt-2 h-2 rounded-full bg-white overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          {Object.keys(data?.byStatus || {}).length === 0 && !loading ? (
+            <div className="md:col-span-3 lg:col-span-4 py-10 text-center text-sm font-black text-gray-400">No booking status data</div>
+          ) : null}
         </div>
       </div>
 
@@ -2821,6 +3638,363 @@ function AdminAdminManagement() {
             </table>
           </div>
         )}
+      </div>
+    </DashboardShell>
+  );
+}
+
+function AdminAuditLogs() {
+  const { t } = useLanguage();
+  const nav = useMemo(() => adminNav(t), [t]);
+  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<import("@/lib/api").ModerationLog[]>([]);
+  const [q, setQ] = useState("");
+  const [entityType, setEntityType] = useState<string>("all");
+  const [acting, setActing] = useState(false);
+  const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [page, setPage] = useState(0);
+  const pageSize = 25;
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const rows = await api.moderation.listLogs(0, 500);
+      setItems(rows);
+    } catch {
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const id = setTimeout(() => void load(), 0);
+    return () => clearTimeout(id);
+  }, [load]);
+
+  const filtered = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    const out = items.filter((l) => {
+      if (entityType !== "all" && (l.entity_type || "").toLowerCase() !== entityType.toLowerCase()) return false;
+      if (!query) return true;
+      const reason = (l.reason || "").toLowerCase();
+      const entType = (l.entity_type || "").toLowerCase();
+      const idText = String(l.entity_id || l.id || "");
+      const action = ((l as any).action || "").toLowerCase();
+      const admin = (l as any).admin_user_name || (l as any).admin_email || "";
+      const adminStr = String(admin).toLowerCase();
+      return reason.includes(query) || entType.includes(query) || idText.includes(query) || action.includes(query) || adminStr.includes(query);
+    });
+    out.sort((a, b) => {
+      const at = new Date(a.created_at || 0).getTime();
+      const bt = new Date(b.created_at || 0).getTime();
+      return bt - at;
+    });
+    return out;
+  }, [entityType, items, q]);
+
+  const entityTypes = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of items) {
+      if (l.entity_type) set.add(l.entity_type);
+    }
+    return Array.from(set).sort();
+  }, [items]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageIndex = Math.min(page, totalPages - 1);
+  const pageItems = useMemo(() => filtered.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize), [filtered, pageIndex]);
+
+  const toneFor = (l: import("@/lib/api").ModerationLog) => {
+    const act = ((l as any).action || l.reason || "").toLowerCase();
+    if (/ban|suspend|reject|delete|hide|remove|block|revoke/.test(act)) return "danger";
+    if (/approve|accept|restore|verify|publish|unban|activate/.test(act)) return "success";
+    if (/warn|review|pending|revision|flag/.test(act)) return "warning";
+    if (/update|edit|change|modify|upload/.test(act)) return "info";
+    return "neutral";
+  };
+
+  const handleRestore = async (l: import("@/lib/api").ModerationLog) => {
+    if (!confirm(t("admin_moderation_confirm_restore"))) return;
+    setActing(true);
+    setNotice(null);
+    try {
+      await api.moderation.restore(l.entity_type, l.entity_id);
+      await load();
+      setNotice({ type: "success", text: t("common_notice_restored") });
+    } catch {
+      setNotice({ type: "error", text: t("admin_moderation_restore_failed") });
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const exportCsv = () => {
+    const esc = (v: unknown) => {
+      const s = String(v ?? "");
+      if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+    const rows = [
+      ["id", "timestamp", "entity_type", "entity_id", "action", "reason", "admin_user_id"],
+      ...filtered.map((l) => [
+        l.id,
+        l.created_at || "",
+        l.entity_type || "",
+        l.entity_id,
+        (l as any).action || "",
+        l.reason || "",
+        (l as any).admin_user_id || "",
+      ]),
+    ];
+    const csv = rows.map((r) => r.map(esc).join(",")).join("\r\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `admin-audit-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <DashboardShell title="Audit Logs" subtitle={t("admin_moderation_logs_title")} nav={nav}>
+      <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-10 py-8 border-b border-gray-50 bg-gray-50/30">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <div className="text-lg font-black text-gray-900">Audit Timeline</div>
+              <div className="mt-1 text-sm font-bold text-gray-500">{t("admin_moderation_logs_title")} • {filtered.length}</div>
+            </div>
+            <div className="flex flex-wrap gap-2 items-center">
+              <button
+                type="button"
+                onClick={exportCsv}
+                disabled={loading || filtered.length === 0}
+                className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition disabled:opacity-60"
+              >
+                Export CSV
+              </button>
+              <button
+                type="button"
+                onClick={() => void load()}
+                disabled={loading}
+                className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition disabled:opacity-60"
+              >
+                {t("admin_users_refresh")}
+              </button>
+            </div>
+          </div>
+          <div className="mt-4">
+            <NoticeBanner notice={notice} />
+          </div>
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-3">
+            <div className="lg:col-span-7">
+              <input
+                value={q}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  setPage(0);
+                }}
+                placeholder="Search action, reason, entity, ID…"
+                className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-3 font-bold text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="lg:col-span-4">
+              <select
+                value={entityType}
+                onChange={(e) => {
+                  setEntityType(e.target.value);
+                  setPage(0);
+                }}
+                className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 font-black text-gray-900 focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All entities</option>
+                {entityTypes.map((et) => (
+                  <option key={et} value={et}>
+                    {et}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="lg:col-span-1 flex items-center justify-end text-xs font-black text-gray-500">
+              {filtered.length}
+            </div>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="p-10 text-center font-bold text-gray-500">{t("common_loading")}</div>
+        ) : filtered.length === 0 ? (
+          <div className="p-10 text-center">
+            <div className="text-6xl">📋</div>
+            <div className="mt-4 text-xl font-black text-gray-900">No audit logs</div>
+            <div className="mt-2 text-gray-500 font-medium">Admin actions will appear here.</div>
+          </div>
+        ) : (
+          <>
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50/50">
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">{t("common_id")}</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">Timestamp</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">Entity</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">Action</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">Details</th>
+                    <th className="px-10 py-5 text-xs font-black text-gray-400 uppercase tracking-widest text-right">
+                      {t("admin_users_table_actions")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {pageItems.map((l) => {
+                    const tone = toneFor(l);
+                    const toneCls =
+                      tone === "danger"
+                        ? "bg-red-50 text-red-700 border-red-200"
+                        : tone === "success"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : tone === "warning"
+                        ? "bg-amber-50 text-amber-800 border-amber-200"
+                        : tone === "info"
+                        ? "bg-blue-50 text-blue-700 border-blue-200"
+                        : "bg-gray-50 text-gray-700 border-gray-200";
+                    const dot =
+                      tone === "danger"
+                        ? "bg-red-500"
+                        : tone === "success"
+                        ? "bg-emerald-500"
+                        : tone === "warning"
+                        ? "bg-amber-500"
+                        : tone === "info"
+                        ? "bg-blue-500"
+                        : "bg-gray-400";
+                    return (
+                      <tr key={l.id} className="hover:bg-gray-50/30 transition-colors">
+                        <td className="px-10 py-6 text-gray-600 font-bold">{l.id}</td>
+                        <td className="px-10 py-6 text-gray-600 font-bold">
+                          <div>{new Date(l.created_at || 0).toLocaleDateString()}</div>
+                          <div className="text-xs text-gray-400 mt-1">{new Date(l.created_at || 0).toLocaleTimeString()}</div>
+                        </td>
+                        <td className="px-10 py-6">
+                          <div className="font-black text-gray-900 flex items-center gap-2">
+                            <span className={`inline-block h-2 w-2 rounded-full ${dot}`} aria-hidden="true" />
+                            {l.entity_type}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            #{l.entity_id} • by{" "}
+                            {(l as any).admin_user_name || (l as any).admin_email || (l as any).admin_user_id || "system"}
+                          </div>
+                        </td>
+                        <td className="px-10 py-6">
+                          <span className={`text-xs font-black px-3 py-1 rounded-full border ${toneCls}`}>
+                            {(l as any).action || l.entity_type || "logged"}
+                          </span>
+                        </td>
+                        <td className="px-10 py-6 text-gray-600 font-bold max-w-md truncate">
+                          {l.reason || "—"}
+                        </td>
+                        <td className="px-10 py-6 text-right">
+                          <div className="flex justify-end">
+                            <ActionIconButton
+                              title={t("admin_moderation_restore")}
+                              disabled={acting}
+                              onClick={() => void handleRestore(l)}
+                            >
+                              <Icon d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6a6 6 0 0 1-6 6 6 6 0 0 1-5.65-4H4.26A8 8 0 0 0 12 21a8 8 0 0 0 0-16Z" />
+                            </ActionIconButton>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="md:hidden divide-y divide-gray-50">
+              {pageItems.map((l) => {
+                const tone = toneFor(l);
+                const toneCls =
+                  tone === "danger"
+                    ? "bg-red-50 text-red-700 border-red-200"
+                    : tone === "success"
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : tone === "warning"
+                    ? "bg-amber-50 text-amber-800 border-amber-200"
+                    : tone === "info"
+                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                    : "bg-gray-50 text-gray-700 border-gray-200";
+                const dot =
+                  tone === "danger"
+                    ? "bg-red-500"
+                    : tone === "success"
+                    ? "bg-emerald-500"
+                    : tone === "warning"
+                    ? "bg-amber-500"
+                    : tone === "info"
+                    ? "bg-blue-500"
+                    : "bg-gray-400";
+                return (
+                  <div key={l.id} className="px-6 py-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="font-black text-gray-900 flex items-center gap-2 min-h-[44px]">
+                        <span className={`inline-block h-2 w-2 rounded-full ${dot}`} aria-hidden="true" />
+                        {l.entity_type} #{l.entity_id}
+                      </div>
+                      <span className={`text-xs font-black px-3 py-1 rounded-full border ${toneCls}`}>
+                        {(l as any).action || l.entity_type || "logged"}
+                      </span>
+                    </div>
+                    {l.reason ? <div className="mt-2 text-sm font-bold text-gray-700">{l.reason}</div> : null}
+                    <div className="mt-3 flex items-center justify-between">
+                      <div className="text-xs text-gray-400">
+                        {new Date(l.created_at || 0).toLocaleString()} • by{" "}
+                        {(l as any).admin_user_name || (l as any).admin_email || (l as any).admin_user_id || "system"}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleRestore(l)}
+                        disabled={acting}
+                        className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-2xl border border-gray-200 bg-white px-3 font-black text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+        {!loading && filtered.length > 0 ? (
+          <div className="px-10 py-6 border-t border-gray-50 flex items-center justify-between">
+            <div className="text-xs font-black text-gray-500">
+              {t("common_page_of", { page: pageIndex + 1, total: totalPages })}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={pageIndex <= 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition disabled:opacity-60"
+              >
+                {t("common_prev")}
+              </button>
+              <button
+                type="button"
+                disabled={pageIndex >= totalPages - 1}
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-black px-4 py-2 rounded-2xl transition disabled:opacity-60"
+              >
+                {t("common_next")}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </DashboardShell>
   );

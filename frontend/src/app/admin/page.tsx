@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui";
 
 export default function AdminDashboard() {
-  const { t } = useLanguage();
+  const { t, formatMoney } = useLanguage();
   const nav = useMemo(() => adminNav(t), [t]);
   const [loading, setLoading] = useState(true);
   const [counts, setCounts] = useState({
@@ -21,6 +21,12 @@ export default function AdminDashboard() {
     bookings: 0,
     pending_apps: 0,
     pending_moderation: 0,
+    custom_requests: 0,
+    active_offers: 0,
+    custom_bookings: 0,
+    completed_trips: 0,
+    revenue_usd: 0,
+    blog_articles: 0,
   });
   const [error, setError] = useState<string | null>(null);
   const [activity, setActivity] = useState<{
@@ -33,7 +39,21 @@ export default function AdminDashboard() {
       try {
         setLoading(true);
         setError(null);
-        const [userStatsRes, pkgsCountRes, agsCountRes, bookingsCountRes, appsRes, pendingPostsRes, logsRes] = await Promise.allSettled([
+        const [
+          userStatsRes,
+          pkgsCountRes,
+          agsCountRes,
+          bookingsCountRes,
+          appsRes,
+          pendingPostsRes,
+          logsRes,
+          reqsRes,
+          offersRes,
+          tripBookingsRes,
+          allBookingsRes,
+          blogRes,
+          reviewsRes,
+        ] = await Promise.allSettled([
           api.users.adminOverview(),
           api.packages.count(),
           api.agencies.count(),
@@ -41,6 +61,12 @@ export default function AdminDashboard() {
           api.agencies.listApplications("pending_verification"),
           api.moderation.listCommunityPosts({ skip: 0, limit: 200, status: "pending_review" }),
           api.moderation.listLogs(0, 20),
+          (api.tripMarketplace as any).adminListRequests?.().catch(() => []),
+          (api.tripMarketplace as any).adminListOffers?.().catch(() => []),
+          (api.tripMarketplace as any).adminListBookings?.().catch(() => []),
+          api.bookings.getAll().catch(() => []),
+          api.blog.list({ limit: 1 }).catch(() => ({ total: 0, items: [] } as any)),
+          (api.packages.listReviewsAdmin ? api.packages.listReviewsAdmin().catch(() => []) : Promise.resolve([])),
         ]);
 
         const userStats = userStatsRes.status === "fulfilled" ? userStatsRes.value : null;
@@ -50,13 +76,48 @@ export default function AdminDashboard() {
         const apps = appsRes.status === "fulfilled" ? appsRes.value : [];
         const pendingPosts = pendingPostsRes.status === "fulfilled" ? pendingPostsRes.value : [];
         const logs = logsRes.status === "fulfilled" ? logsRes.value : [];
+        const reqs = reqsRes.status === "fulfilled" ? ((reqsRes.value as any) || []) : [];
+        const offers = offersRes.status === "fulfilled" ? ((offersRes.value as any) || []) : [];
+        const tripBookings = tripBookingsRes.status === "fulfilled" ? ((tripBookingsRes.value as any) || []) : [];
+        const allBookings = allBookingsRes.status === "fulfilled" ? ((allBookingsRes.value as any) || []) : [];
+        const blog = blogRes.status === "fulfilled" ? ((blogRes.value as any) || { total: 0 }) : { total: 0 };
+        const reviews = reviewsRes.status === "fulfilled" ? ((reviewsRes.value as any) || []) : [];
 
-        const rejected = [userStatsRes, pkgsCountRes, agsCountRes, bookingsCountRes, appsRes, pendingPostsRes, logsRes].filter((r) => r.status === "rejected");
+        const rejected = [
+          userStatsRes, pkgsCountRes, agsCountRes, bookingsCountRes, appsRes, pendingPostsRes, logsRes,
+        ].filter((r) => r.status === "rejected");
         if (rejected.length > 0) {
           const firstError = rejected[0].status === "rejected" ? rejected[0].reason : null;
           const text = firstError instanceof Error ? firstError.message : "";
           setError(text || "Some dashboard data could not be loaded.");
         }
+
+        const rates: Record<string, number> = { USD: 1, EUR: 0.92, GBP: 0.79, RUB: 92, TRY: 32, AZN: 1.7 };
+        const toUsd = (amount: number, from?: string | null) => {
+          const code = typeof from === "string" ? from.toUpperCase() : "USD";
+          const rate = rates[code] || 1;
+          if (rate === 0) return 0;
+          return amount / rate;
+        };
+
+        let revenue = 0;
+        let completed = 0;
+        for (const b of allBookings) {
+          const s = String(b.status || "").toLowerCase();
+          if (s === "completed") completed += 1;
+          if (/^(accepted|confirmed|in_progress|completed|paid|payment_received)$/.test(s)) {
+            revenue += toUsd(Number((b as any).offered_total_price ?? b.total_price ?? 0), (b as any).currency);
+          }
+        }
+        for (const tb of tripBookings) {
+          const s = String(tb.status || "").toLowerCase();
+          if (s === "completed" || s === "confirmed") completed += 1;
+          if (/^(accepted|confirmed|in_progress|completed|paid)$/.test(s)) {
+            revenue += toUsd(Number((tb as any).offer?.total_price ?? tb.total_price ?? 0), (tb as any).offer?.currency ?? tb.currency);
+          }
+        }
+
+        void reviews;
 
         setCounts({
           users: userStats?.total_users ?? 0,
@@ -64,9 +125,19 @@ export default function AdminDashboard() {
           new_registrations: userStats?.new_registrations_7d ?? 0,
           packages: pkgsTotal,
           agencies: agsTotal,
-          bookings: bookingsTotal,
+          bookings: bookingsTotal + tripBookings.length,
           pending_apps: apps.length,
           pending_moderation: pendingPosts.length,
+          custom_requests: Array.isArray(reqs) ? reqs.length : 0,
+          active_offers: Array.isArray(offers)
+            ? offers.filter((o: any) =>
+                /^(submitted|accepted|active|pending)$/.test(String(o.status || "").toLowerCase())
+              ).length
+            : 0,
+          custom_bookings: Array.isArray(tripBookings) ? tripBookings.length : 0,
+          completed_trips: completed,
+          revenue_usd: revenue,
+          blog_articles: typeof blog.total === "number" ? blog.total : Array.isArray(blog) ? blog.length : 0,
         });
 
         setActivity({ recentUsers: userStats?.recent_users ?? [], recentLogs: logs.slice(0, 8) });
@@ -109,6 +180,55 @@ export default function AdminDashboard() {
             <div className="text-xs font-black text-gray-400 uppercase tracking-widest">{t("admin_nav_bookings")}</div>
             <CardTitle className="mt-1 text-4xl">{loading ? "…" : counts.bookings}</CardTitle>
             <CardDescription className="text-xs">{loading ? "…" : `${counts.new_registrations} new (7d)`}</CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Link href="/admin/trip-requests" prefetch={false} className="block">
+          <Card className="h-full hover:-translate-y-0.5 hover:shadow-md transition">
+            <CardHeader>
+              <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Trip Requests</div>
+              <CardTitle className="mt-1 text-3xl">{loading ? "…" : counts.custom_requests}</CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
+        <Link href="/admin/trip-offers" prefetch={false} className="block">
+          <Card className="h-full hover:-translate-y-0.5 hover:shadow-md transition">
+            <CardHeader>
+              <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Active Offers</div>
+              <CardTitle className="mt-1 text-3xl">{loading ? "…" : counts.active_offers}</CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
+        <Link href="/admin/bookings" prefetch={false} className="block">
+          <Card className="h-full hover:-translate-y-0.5 hover:shadow-md transition">
+            <CardHeader>
+              <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Custom Bookings</div>
+              <CardTitle className="mt-1 text-3xl">{loading ? "…" : counts.custom_bookings}</CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
+        <Card>
+          <CardHeader>
+            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Completed Trips</div>
+            <CardTitle className="mt-1 text-3xl text-emerald-600">
+              {loading ? "…" : counts.completed_trips}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Revenue (USD)</div>
+            <CardTitle className="mt-1 text-2xl text-blue-600">
+              {loading ? "…" : formatMoney(counts.revenue_usd, "USD" as any)}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Blog Articles</div>
+            <CardTitle className="mt-1 text-3xl">{loading ? "…" : counts.blog_articles}</CardTitle>
           </CardHeader>
         </Card>
       </div>

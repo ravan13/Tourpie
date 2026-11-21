@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .routers import users, packages, bookings, agencies, recommendations, favorites, messages, notifications, community, blog, moderation, trip_marketplace

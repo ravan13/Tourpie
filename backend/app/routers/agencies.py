@@ -200,7 +200,12 @@ def count_agencies(user: models.User = Depends(get_current_user), db: Session = 
     return {"total": total}
 
 @router.post("/", response_model=schemas.Agency)
-def create_agency(agency: schemas.AgencyCreate, db: Session = Depends(database.get_db)):
+def create_agency(
+    agency: schemas.AgencyCreate,
+    db: Session = Depends(database.get_db),
+    user: models.User = Depends(get_current_user),
+):
+    require_admin(user)
     db_agency = models.Agency(**agency.model_dump())
     db.add(db_agency)
     db.commit()
@@ -546,7 +551,12 @@ def delete_agency(
     return {"message": "deleted"}
 
 @router.get("/{agency_id}/stats")
-def get_agency_stats(agency_id: int, db: Session = Depends(database.get_db)):
+def get_agency_stats(
+    agency_id: int,
+    db: Session = Depends(database.get_db),
+    user: models.User = Depends(get_current_user),
+):
+    require_agency_or_admin(user, agency_id)
     agency = db.query(models.Agency).filter(models.Agency.id == agency_id).first()
     if not agency:
         raise HTTPException(status_code=404, detail="Agency not found")

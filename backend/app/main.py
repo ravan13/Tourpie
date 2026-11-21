@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .routers import users, packages, bookings, agencies, recommendations, favorites, messages, notifications, community, blog, moderation, trip_marketplace
@@ -6,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from .database import SessionLocal
 from .models import User, UserRole
-from .auth import get_password_hash
+from .auth import get_password_hash, validate_strong_password
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import logging
@@ -15,9 +15,11 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-env_file = BASE_DIR / ".env"
 
-load_dotenv(env_file, override=True)
+# Load local .env files without overriding variables already present in the OS
+# environment, consistent with app/database.py and app/auth.py.
+load_dotenv(BASE_DIR / ".env", override=False)
+load_dotenv(BASE_DIR.parent / ".env", override=False)
 
 _env_name = (os.getenv("TOURPIE_ENV") or os.getenv("ENVIRONMENT") or os.getenv("ENV") or "development").strip().lower()
 _is_prod = _env_name in ("prod", "production")
@@ -232,15 +234,39 @@ if _auto_schema:
     _ensure_columns()
 
 def create_default_admin():
+    logger = logging.getLogger(__name__)
+
+    email = os.getenv("DEFAULT_ADMIN_EMAIL")
+    password = os.getenv("DEFAULT_ADMIN_PASSWORD")
+    full_name = os.getenv("DEFAULT_ADMIN_NAME", "Administrator")
+
     db: Session = SessionLocal()
 
     try:
-        email = os.getenv("DEFAULT_ADMIN_EMAIL")
-        password = os.getenv("DEFAULT_ADMIN_PASSWORD")
-        full_name = os.getenv("DEFAULT_ADMIN_NAME", "Administrator")
+        # In production an existing admin means bootstrap credentials are not required,
+        # so startup may proceed without DEFAULT_ADMIN_EMAIL / DEFAULT_ADMIN_PASSWORD.
+        if _is_prod and db.query(User).filter(User.role == UserRole.ADMIN).first():
+            logger.info("An admin account already exists; skipping default admin creation.")
+            return
 
         if not email or not password:
-            logging.getLogger(__name__).warning("Default admin credentials are not configured.")
+            if _is_prod:
+                raise RuntimeError(
+                    "DEFAULT_ADMIN_EMAIL and DEFAULT_ADMIN_PASSWORD must be configured in production "
+                    "so the first admin account can be created safely."
+                )
+            logger.warning("Default admin credentials are not configured.")
+            return
+
+        try:
+            validate_strong_password(password)
+        except ValueError as exc:
+            if _is_prod:
+                raise RuntimeError(
+                    "DEFAULT_ADMIN_PASSWORD must be a strong password in production "
+                    "(at least 8 characters including upper case, lower case and a number)."
+                ) from exc
+            logger.warning("Default admin password is too weak (%s); skipping default admin creation.", exc)
             return
 
         admin = (
@@ -251,7 +277,7 @@ def create_default_admin():
         )
 
         if admin:
-            logging.getLogger(__name__).info("Default admin already exists.")
+            logger.info("Default admin already exists.")
             return
 
         admin = User(
@@ -267,7 +293,7 @@ def create_default_admin():
         db.commit()
         db.refresh(admin)
 
-        logging.getLogger(__name__).info("Default admin created.")
+        logger.info("Default admin created.")
 
     finally:
         db.close()

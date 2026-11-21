@@ -19,6 +19,98 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
 OTP_EXPIRE_MINUTES = int(os.getenv("OTP_EXPIRE_MINUTES", "5"))
 EMAIL_VERIFICATION_LINK_EXPIRE_HOURS = int(os.getenv("EMAIL_VERIFICATION_LINK_EXPIRE_HOURS", "24"))
 
+# Agency verification documents are stored on disk: bound their size, stream the writes and
+# accept only file types confirmed by magic bytes (the client MIME type is never trusted).
+MAX_APPLICATION_UPLOAD_BYTES = max(1024, int(os.getenv("MAX_AGENCY_UPLOAD_BYTES", str(5 * 1024 * 1024))))
+UPLOAD_CHUNK_BYTES = 64 * 1024
+UPLOAD_HEADER_BYTES = 16
+ALLOWED_UPLOAD_TYPES = {
+    "application/pdf": ".pdf",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+UPLOAD_TYPE_ALIASES = {"image/jpg": "image/jpeg", "image/pjpeg": "image/jpeg", "application/x-pdf": "application/pdf"}
+UPLOAD_DIR_ROOT = Path(__file__).resolve().parent.parent.parent
+UPLOAD_STORAGE_ROOT = UPLOAD_DIR_ROOT / "uploads"
+# Only these types may ever be served inline; anything else is sent as a binary download so a
+# mislabeled file (html/svg) can never be rendered as markup by the browser.
+UPLOAD_MEDIA_TYPES = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+
+def _document_media_type(path: Path) -> str:
+    return UPLOAD_MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
+
+def _sniff_upload_type(header: bytes) -> Optional[str]:
+    """Detect the real file type from magic bytes."""
+    if header.startswith(b"%PDF-"):
+        return "application/pdf"
+    if header.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+def _safe_upload_name(filename: str, detected_type: str) -> str:
+    """Build a flat, sanitized file name: no directories, no traversal, canonical extension."""
+    base = (filename or "").replace("\\", "/").split("/")[-1]
+    stem = Path(base).stem
+    cleaned = "".join(ch for ch in stem if ch.isalnum() or ch in (".", "_", "-")).strip("._-")
+    if not cleaned:
+        cleaned = "document"
+    return f"{cleaned[:80]}{ALLOWED_UPLOAD_TYPES[detected_type]}"
+
+def _validate_application_upload(upload: UploadFile, *, field: str) -> tuple[str, str]:
+    """Validate an agency verification document before any database write happens."""
+    declared = (getattr(upload, "content_type", None) or "").strip().lower()
+    declared = UPLOAD_TYPE_ALIASES.get(declared, declared)
+    if declared and declared not in ("application/octet-stream", "") and declared not in ALLOWED_UPLOAD_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type for {field}")
+
+    declared_size = getattr(upload, "size", None)
+    if isinstance(declared_size, int) and declared_size > MAX_APPLICATION_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail=f"File is too large for {field}")
+
+    try:
+        upload.file.seek(0)
+        header = upload.file.read(UPLOAD_HEADER_BYTES)
+        upload.file.seek(0)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid file for {field}") from exc
+
+    detected = _sniff_upload_type(header)
+    if not detected:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type for {field}")
+    if declared and declared not in ("application/octet-stream", "") and declared != detected:
+        raise HTTPException(status_code=400, detail=f"File type does not match its content for {field}")
+
+    return detected, _safe_upload_name(upload.filename or "", detected)
+
+def _write_upload_stream(upload: UploadFile, dest: Path) -> None:
+    """Stream an upload to disk, aborting past the size limit and removing partial files."""
+    written = 0
+    upload.file.seek(0)
+    try:
+        with dest.open("wb") as handle:
+            while True:
+                chunk = upload.file.read(UPLOAD_CHUNK_BYTES)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > MAX_APPLICATION_UPLOAD_BYTES:
+                    raise HTTPException(status_code=400, detail="File is too large")
+                handle.write(chunk)
+    except HTTPException:
+        dest.unlink(missing_ok=True)
+        raise
+
 def _frontend_base_url() -> str:
     return (os.getenv("FRONTEND_BASE_URL") or os.getenv("NEXT_PUBLIC_SITE_URL") or "http://127.0.0.1:3000").strip().rstrip("/")
 
@@ -108,7 +200,12 @@ def count_agencies(user: models.User = Depends(get_current_user), db: Session = 
     return {"total": total}
 
 @router.post("/", response_model=schemas.Agency)
-def create_agency(agency: schemas.AgencyCreate, db: Session = Depends(database.get_db)):
+def create_agency(
+    agency: schemas.AgencyCreate,
+    db: Session = Depends(database.get_db),
+    user: models.User = Depends(get_current_user),
+):
+    require_admin(user)
     db_agency = models.Agency(**agency.model_dump())
     db.add(db_agency)
     db.commit()
@@ -148,6 +245,18 @@ def apply_as_agency(
         auth.validate_strong_password(password)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Validate the uploaded documents before creating any account so a rejected file cannot
+    # leave a half-registered agency behind.
+    uploads = {
+        "business_license": business_license,
+        "tourism_certificate": tourism_certificate,
+        "id_verification": id_verification,
+    }
+    validated_uploads: dict[str, tuple[str, str]] = {}
+    for upload_kind, upload_file in uploads.items():
+        if upload_file and upload_file.filename:
+            validated_uploads[upload_kind] = _validate_application_upload(upload_file, field=upload_kind)
 
     hashed_password = auth.get_password_hash(password)
     now = datetime.now(timezone.utc)
@@ -251,20 +360,21 @@ def apply_as_agency(
     db.commit()
     db.refresh(app_row)
 
-    base_dir = Path(__file__).resolve().parent.parent.parent / "uploads" / "agency_applications" / str(app_row.id)
+    base_dir = (UPLOAD_STORAGE_ROOT / "agency_applications" / str(app_row.id)).resolve()
     base_dir.mkdir(parents=True, exist_ok=True)
 
     def save_file(kind: str, up: Optional[UploadFile]) -> Optional[str]:
         if not up or not up.filename:
             return None
-        safe_name = "".join(c for c in up.filename if c.isalnum() or c in (".", "_", "-"))
-        if not safe_name:
-            safe_name = f"{kind}.bin"
-        dest = base_dir / f"{kind}_{safe_name}"
-        with dest.open("wb") as f:
-            f.write(up.file.read())
-        rel = dest.relative_to(Path(__file__).resolve().parent.parent.parent).as_posix()
-        return rel
+        validated = validated_uploads.get(kind)
+        if not validated:
+            return None
+        _, safe_name = validated
+        dest = (base_dir / f"{kind}_{safe_name}").resolve()
+        if dest.parent != base_dir:
+            raise HTTPException(status_code=400, detail=f"Invalid file name for {kind}")
+        _write_upload_stream(up, dest)
+        return dest.relative_to(UPLOAD_DIR_ROOT).as_posix()
 
     app_row.business_license_path = save_file("business_license", business_license)
     app_row.tourism_certificate_path = save_file("tourism_certificate", tourism_certificate)
@@ -366,11 +476,14 @@ def download_agency_application_document(
     if not rel_path:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    abs_path = (Path(__file__).resolve().parent.parent.parent / rel_path).resolve()
-    if not abs_path.exists():
+    abs_path = (UPLOAD_DIR_ROOT / rel_path).resolve()
+    # Stored paths are generated internally, but never serve anything outside the uploads root.
+    if UPLOAD_STORAGE_ROOT.resolve() not in abs_path.parents:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not abs_path.is_file():
         raise HTTPException(status_code=404, detail="Document not found")
 
-    return FileResponse(str(abs_path))
+    return FileResponse(str(abs_path), media_type=_document_media_type(abs_path))
 
 @router.get("/{agency_id}", response_model=schemas.Agency)
 def get_agency(agency_id: int, db: Session = Depends(database.get_db)):
@@ -438,7 +551,12 @@ def delete_agency(
     return {"message": "deleted"}
 
 @router.get("/{agency_id}/stats")
-def get_agency_stats(agency_id: int, db: Session = Depends(database.get_db)):
+def get_agency_stats(
+    agency_id: int,
+    db: Session = Depends(database.get_db),
+    user: models.User = Depends(get_current_user),
+):
+    require_agency_or_admin(user, agency_id)
     agency = db.query(models.Agency).filter(models.Agency.id == agency_id).first()
     if not agency:
         raise HTTPException(status_code=404, detail="Agency not found")

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import secrets
 from typing import List, Optional
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_
@@ -18,9 +20,50 @@ router = APIRouter()
 TRAVEL_STYLES = {"luxury", "budget", "adventure", "family", "romantic", "solo", "group"}
 PACKAGE_STATUSES = {"active", "published", "live", "available"}
 
+DOCUMENT_FILE_URL_MAX_LENGTH = 2048
+INTERNAL_STORAGE_KEY_RE = re.compile(r"^/?uploads(?:/[A-Za-z0-9._-]+)+$")
+
+# Role-based transition allowlists. Customers may only cancel their own bookings,
+# submit a payment as "sent" and mark documents as "viewed"; every other status is
+# agency/admin controlled.
+TRIP_BOOKING_STATUSES = {s.value for s in models.TripBookingStatus}
+CUSTOMER_BOOKING_STATUSES = {"cancelled"}
+CUSTOMER_PAYMENT_STATUSES = {"payment_sent"}
+CUSTOMER_DOCUMENT_STATUSES = {"viewed"}
+AGENCY_DOCUMENT_STATUSES = {"viewed", "approved", "rejected"}
+STAFF_ROLES = ("agency", "admin")
+
 
 def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _validate_document_file_url(value: Optional[str]) -> str:
+    """Accept only https:// URLs or internal storage keys (uploads/...) as document links.
+
+    Blocks dangerous schemes (javascript:, data:, file:), plain http, credential-bearing
+    URLs and traversal sequences, so a stored document link cannot become stored XSS or
+    escape the storage root.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="file_url required")
+    if len(raw) > DOCUMENT_FILE_URL_MAX_LENGTH:
+        raise HTTPException(status_code=400, detail="file_url is too long")
+    if any(char.isspace() or ord(char) < 0x20 for char in raw):
+        raise HTTPException(status_code=400, detail="file_url is invalid")
+
+    if not re.match(r"^[A-Za-z][A-Za-z0-9+.\-]*:", raw):
+        if not INTERNAL_STORAGE_KEY_RE.match(raw):
+            raise HTTPException(status_code=400, detail="file_url must be an https URL or an internal storage key")
+        if any(segment in ("", ".", "..") for segment in raw.strip("/").split("/")):
+            raise HTTPException(status_code=400, detail="file_url must be an https URL or an internal storage key")
+        return raw
+
+    parsed = urlsplit(raw)
+    if parsed.scheme.lower() != "https" or not parsed.netloc or "@" in parsed.netloc:
+        raise HTTPException(status_code=400, detail="file_url must be an https URL")
+    return raw
 
 
 def _parse_date(value: Optional[str]) -> Optional[datetime.date]:
@@ -2106,6 +2149,13 @@ def admin_list_trip_offers(
     return rows
 
 
+def _role_value(user: Optional[models.User]) -> Optional[str]:
+    role = getattr(user, "role", None) if user is not None else None
+    if role is None:
+        return None
+    return getattr(role, "value", role)
+
+
 def _require_booking_access(user: models.User, booking: models.TripBooking) -> None:
     role_value = getattr(user.role, "value", user.role) if user.role else None
     if role_value == "admin":
@@ -2388,8 +2438,12 @@ def set_trip_booking_status(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     _require_booking_access(user, booking)
-    role_value = getattr(user.role, "value", user.role) if user.role else None
+    role_value = _role_value(user)
     new_status = (body.status or "").strip().lower()
+    if new_status not in TRIP_BOOKING_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid booking status")
+    if role_value not in STAFF_ROLES and new_status not in CUSTOMER_BOOKING_STATUSES:
+        raise HTTPException(status_code=403, detail="Not allowed")
     now = _utcnow()
     if new_status in ("travelling",):
         booking.trip_started_at = now
@@ -2478,9 +2532,7 @@ def create_trip_booking_document(
         agency_id = _require_agency_access(user)
         if booking.agency_id != agency_id:
             raise HTTPException(status_code=403, detail="Not allowed")
-    file_url = body.file_url.strip()
-    if not file_url:
-        raise HTTPException(status_code=400, detail="file_url required")
+    file_url = _validate_document_file_url(body.file_url)
     doc = models.TripBookingDocument(
         booking_id=booking.id,
         uploader_user_id=user.id,
@@ -2526,6 +2578,10 @@ def set_trip_booking_document_status(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     new_status = (body.status or "").strip().lower()
+    if new_status not in AGENCY_DOCUMENT_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    if new_status not in CUSTOMER_DOCUMENT_STATUSES and _role_value(user) not in STAFF_ROLES:
+        raise HTTPException(status_code=403, detail="Not allowed")
     now = _utcnow()
     if new_status == "viewed":
         doc.status = models.TripBookingDocumentStatus.VIEWED
@@ -2586,7 +2642,7 @@ def upsert_trip_booking_payment(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     _require_booking_access(user, booking)
-    role_value = getattr(user.role, "value", user.role) if user.role else None
+    role_value = _role_value(user)
     payment = (
         db.query(models.TripBookingPaymentRecord)
         .filter(models.TripBookingPaymentRecord.booking_id == booking.id)
@@ -2614,8 +2670,11 @@ def upsert_trip_booking_payment(
             "customer_confirmed": models.TripBookingPaymentStatus.CUSTOMER_CONFIRMED,
             "completed": models.TripBookingPaymentStatus.COMPLETED,
         }
-        mapped = mapping.get(s, models.TripBookingPaymentStatus.WAITING)
-        payment.status = mapped
+        if s not in mapping:
+            raise HTTPException(status_code=400, detail="Invalid payment status")
+        if role_value not in STAFF_ROLES and s not in CUSTOMER_PAYMENT_STATUSES:
+            raise HTTPException(status_code=403, detail="Only agency/admin can set this payment status")
+        payment.status = mapping[s]
         event_note = f"Payment status: {s}"
     if body.payment_method:
         payment.payment_method = body.payment_method

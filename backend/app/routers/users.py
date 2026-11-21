@@ -9,6 +9,7 @@ import base64
 import json
 import secrets
 from typing import List, Optional
+from urllib.parse import urlsplit
 from ..deps import get_current_user, get_token_payload
 import logging
 import os
@@ -16,8 +17,55 @@ import os
 router = APIRouter()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
-SUPPORTED_AVATAR_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"}
+# SVG is intentionally excluded: it is an active content type and would allow stored XSS.
+SUPPORTED_AVATAR_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+AVATAR_MAGIC_PREFIXES = {
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/gif": (b"GIF87a", b"GIF89a"),
+}
 MAX_AVATAR_UPLOAD_BYTES = 2 * 1024 * 1024
+MAX_AVATAR_URL_LENGTH = 2048
+
+def _avatar_data_url_matches_type(mime_type: str, decoded: bytes) -> bool:
+    if mime_type == "image/webp":
+        return len(decoded) >= 12 and decoded[:4] == b"RIFF" and decoded[8:12] == b"WEBP"
+    prefixes = AVATAR_MAGIC_PREFIXES.get(mime_type)
+    return bool(prefixes) and any(decoded.startswith(prefix) for prefix in prefixes)
+
+def _sanitize_avatar_url(value: Optional[str]) -> Optional[str]:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("data:"):
+        header, _, encoded = raw.partition(",")
+        if not header or not encoded:
+            raise HTTPException(status_code=400, detail="Invalid avatar image")
+        mime_type = header[5:].split(";", 1)[0].strip().lower()
+        if mime_type not in SUPPORTED_AVATAR_MIME_TYPES:
+            raise HTTPException(status_code=400, detail="Unsupported avatar image type")
+        if ";base64" not in header.lower():
+            raise HTTPException(status_code=400, detail="Invalid avatar image")
+        try:
+            decoded = base64.b64decode(encoded, validate=True)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid avatar image") from exc
+        if len(decoded) > MAX_AVATAR_UPLOAD_BYTES:
+            raise HTTPException(status_code=400, detail="Avatar image is too large")
+        if not _avatar_data_url_matches_type(mime_type, decoded):
+            raise HTTPException(status_code=400, detail="Avatar image does not match its declared type")
+        return raw
+    if len(raw) > MAX_AVATAR_URL_LENGTH:
+        raise HTTPException(status_code=400, detail="Avatar URL is too long")
+    if any(ch.isspace() or ord(ch) < 0x20 for ch in raw):
+        raise HTTPException(status_code=400, detail="Invalid avatar URL")
+    if "://" in raw:
+        parsed = urlsplit(raw)
+        # Only https is accepted: plain http is downgradeable and unsafe to embed.
+        if parsed.scheme.lower() != "https" or not parsed.netloc or "@" in parsed.netloc:
+            raise HTTPException(status_code=400, detail="Avatar URL must use https")
+        return raw
+    raise HTTPException(status_code=400, detail="Invalid avatar URL")
 
 def _normalize_email(email: str) -> str:
     return (email or "").strip().lower()
@@ -33,30 +81,6 @@ def _normalize_currency(value: Optional[str]) -> Optional[str]:
 def _normalize_time_zone(value: Optional[str]) -> Optional[str]:
     v = (value or "").strip()
     return v[:120] if v else None
-
-def _sanitize_avatar_url(value: Optional[str]) -> Optional[str]:
-    raw = (value or "").strip()
-    if not raw:
-        return None
-    if raw.startswith("data:image/"):
-        header, _, encoded = raw.partition(",")
-        if not header or not encoded:
-            raise HTTPException(status_code=400, detail="Invalid avatar image")
-        mime_type = header[5:].split(";", 1)[0].strip().lower()
-        if mime_type not in SUPPORTED_AVATAR_MIME_TYPES:
-            raise HTTPException(status_code=400, detail="Unsupported avatar image type")
-        if ";base64" not in header.lower():
-            raise HTTPException(status_code=400, detail="Invalid avatar image")
-        try:
-            decoded = base64.b64decode(encoded, validate=True)
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail="Invalid avatar image") from exc
-        if len(decoded) > MAX_AVATAR_UPLOAD_BYTES:
-            raise HTTPException(status_code=400, detail="Avatar image is too large")
-        return raw
-    if raw.startswith("http://") or raw.startswith("https://"):
-        return raw
-    raise HTTPException(status_code=400, detail="Invalid avatar URL")
 
 def _extract_client_ip(request: Request) -> Optional[str]:
     forwarded = (request.headers.get("x-forwarded-for") or "").strip()
@@ -120,10 +144,13 @@ def _issue_access_token_for_user(
     request: Request,
     existing_session_id: Optional[str] = None,
     remember_me: bool = False,
+    expire_minutes: Optional[int] = None,
+    session_provider: Optional[str] = None,
 ) -> schemas.AuthResponse:
     now = datetime.now(timezone.utc)
     role_value = user.role.value if hasattr(user.role, "value") else user.role
-    expires_delta = timedelta(minutes=auth.get_access_token_expire_minutes(role_value, remember_me=remember_me))
+    ttl_minutes = int(expire_minutes) if expire_minutes and int(expire_minutes) > 0 else auth.get_access_token_expire_minutes(role_value, remember_me=remember_me)
+    expires_delta = timedelta(minutes=ttl_minutes)
     expires_at = now + expires_delta
 
     session: models.UserSession | None = None
@@ -147,7 +174,7 @@ def _issue_access_token_for_user(
         db.add(session)
 
     user_agent = (request.headers.get("user-agent") or "").strip() or None
-    session.auth_provider = user.auth_provider or "email"
+    session.auth_provider = session_provider or (user.auth_provider or "email")
     session.device_label = _describe_client_device(user_agent)
     session.user_agent = user_agent[:500] if user_agent else None
     session.ip_address = _extract_client_ip(request)
@@ -221,6 +248,8 @@ OTP_EXPIRE_MINUTES = int(os.getenv("OTP_EXPIRE_MINUTES", "5"))
 OTP_RESEND_COOLDOWN_SECONDS = int(os.getenv("OTP_RESEND_COOLDOWN_SECONDS", "60"))
 EMAIL_VERIFICATION_LINK_EXPIRE_HOURS = int(os.getenv("EMAIL_VERIFICATION_LINK_EXPIRE_HOURS", "24"))
 EMAIL_CHANGE_LINK_EXPIRE_HOURS = int(os.getenv("EMAIL_CHANGE_LINK_EXPIRE_HOURS", "24"))
+# Admin impersonation tokens are deliberately short lived and configurable.
+IMPERSONATION_TOKEN_EXPIRE_MINUTES = max(1, int(os.getenv("IMPERSONATION_TOKEN_EXPIRE_MINUTES", "15")))
 
 def _parse_remember_me(value: object) -> bool:
     if isinstance(value, bool):
@@ -270,6 +299,107 @@ def _consume_rate_limit(
     if c >= max_count:
         raise HTTPException(status_code=429, detail=error_detail)
     return start, c + 1
+
+
+# --- Brute-force protection for authentication endpoints --------------------
+# Failed attempts are tracked per account identity and per client IP, reusing the
+# window semantics of _consume_rate_limit (see above). Counters are temporary and
+# are cleared for the account as soon as authentication succeeds.
+AUTH_ATTEMPT_WINDOW_SECONDS = int(os.getenv("AUTH_ATTEMPT_WINDOW_SECONDS", str(15 * 60)))
+AUTH_MAX_FAILED_PER_ACCOUNT = int(os.getenv("AUTH_MAX_FAILED_PER_ACCOUNT", "5"))
+AUTH_MAX_FAILED_PER_IP = int(os.getenv("AUTH_MAX_FAILED_PER_IP", "20"))
+AUTH_LOCKOUT_SECONDS = int(os.getenv("AUTH_LOCKOUT_SECONDS", "60"))
+AUTH_LOCKOUT_MAX_SECONDS = int(os.getenv("AUTH_LOCKOUT_MAX_SECONDS", str(15 * 60)))
+AUTH_ATTEMPT_DETAIL = "Too many attempts. Please try again later."
+_AUTH_ATTEMPT_MAX_TRACKED_KEYS = 2000
+
+_attempt_windows: dict[str, tuple[datetime, int]] = {}
+_attempt_lockouts: dict[str, datetime] = {}
+_attempt_strikes: dict[str, int] = {}
+
+
+def _attempt_account_key(scope: str, identity: str | None) -> str:
+    return f"{scope}:account:{(identity or '-').strip().lower()}"
+
+
+def _attempt_ip_key(scope: str, request: Request | None) -> str | None:
+    client_ip = _extract_client_ip(request) if request is not None else None
+    return f"{scope}:ip:{client_ip}" if client_ip else None
+
+
+def _prune_attempt_state(now: datetime) -> None:
+    if len(_attempt_windows) <= _AUTH_ATTEMPT_MAX_TRACKED_KEYS:
+        return
+    for key, (start, _count) in list(_attempt_windows.items()):
+        if (now - start).total_seconds() >= AUTH_ATTEMPT_WINDOW_SECONDS * 2:
+            _attempt_windows.pop(key, None)
+            _attempt_lockouts.pop(key, None)
+            _attempt_strikes.pop(key, None)
+
+
+def _enforce_auth_attempt_limit(
+    *,
+    scope: str,
+    identity: str | None,
+    request: Request | None = None,
+    error_detail: str = AUTH_ATTEMPT_DETAIL,
+) -> None:
+    """Reject a temporarily locked-out account or client IP with HTTP 429."""
+    now = datetime.now(timezone.utc)
+    retry_after = 0
+    for key in (_attempt_account_key(scope, identity), _attempt_ip_key(scope, request)):
+        if not key:
+            continue
+        locked_until = _attempt_lockouts.get(key)
+        if locked_until and locked_until > now:
+            retry_after = max(retry_after, int((locked_until - now).total_seconds()) + 1)
+    if retry_after > 0:
+        raise HTTPException(status_code=429, detail=error_detail, headers={"Retry-After": str(retry_after)})
+
+
+def _record_auth_failure(
+    *,
+    scope: str,
+    identity: str | None,
+    request: Request | None = None,
+    max_per_account: int = AUTH_MAX_FAILED_PER_ACCOUNT,
+    max_per_ip: int = AUTH_MAX_FAILED_PER_IP,
+    error_detail: str = AUTH_ATTEMPT_DETAIL,
+) -> None:
+    """Count one failed attempt; raise HTTP 429 with a temporary lockout once exceeded."""
+    now = datetime.now(timezone.utc)
+    _prune_attempt_state(now)
+    tracked: list[tuple[str, int]] = [(_attempt_account_key(scope, identity), max_per_account)]
+    ip_key = _attempt_ip_key(scope, request)
+    if ip_key:
+        tracked.append((ip_key, max_per_ip))
+    for key, limit in tracked:
+        window_start, count = _attempt_windows.get(key, (None, 0))
+        try:
+            new_start, new_count = _consume_rate_limit(
+                now=now,
+                window_start=window_start,
+                count=count,
+                window_seconds=AUTH_ATTEMPT_WINDOW_SECONDS,
+                max_count=max(1, limit),
+                error_detail=error_detail,
+            )
+        except HTTPException:
+            strikes = _attempt_strikes.get(key, 0) + 1
+            _attempt_strikes[key] = strikes
+            lock_seconds = min(AUTH_LOCKOUT_SECONDS * (2 ** (strikes - 1)), AUTH_LOCKOUT_MAX_SECONDS)
+            _attempt_lockouts[key] = now + td(seconds=lock_seconds)
+            _attempt_windows[key] = (now, max(1, limit))
+            raise HTTPException(status_code=429, detail=error_detail, headers={"Retry-After": str(lock_seconds)})
+        _attempt_windows[key] = (new_start, new_count)
+
+
+def _clear_auth_failures(scope: str, identity: str | None) -> None:
+    """Forget the account's failed attempts after a successful authentication."""
+    key = _attempt_account_key(scope, identity)
+    _attempt_windows.pop(key, None)
+    _attempt_lockouts.pop(key, None)
+    _attempt_strikes.pop(key, None)
 
 def _verification_email(lang: str, code: str, minutes: int, link: str | None = None) -> tuple[str, str]:
     link_line = f"\nVerify instantly: {link}\n" if link else "\n"
@@ -655,24 +785,30 @@ def admin_create_admin(
     return user
 
 @router.post("/verify-email", response_model=schemas.User)
-def verify_email(payload: schemas.UserVerifyEmail, db: Session = Depends(database.get_db)):
+def verify_email(request: Request, payload: schemas.UserVerifyEmail, db: Session = Depends(database.get_db)):
     email = _normalize_email(str(payload.email))
+    _enforce_auth_attempt_limit(scope="verify-email", identity=email, request=request)
     db_user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
     if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
+        # Same response for unknown accounts to avoid account enumeration.
+        _record_auth_failure(scope="verify-email", identity=email, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
 
     if getattr(db_user, "is_email_verified", False):
         return db_user
 
     if not db_user.verification_code_hash or not db_user.verification_expires_at:
-        raise HTTPException(status_code=400, detail="Verification code not found")
+        _record_auth_failure(scope="verify-email", identity=email, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
 
     expires_at = _as_utc(db_user.verification_expires_at)
     if not expires_at or datetime.now(timezone.utc) > expires_at:
-        raise HTTPException(status_code=400, detail="Verification code expired")
+        _record_auth_failure(scope="verify-email", identity=email, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
 
     if not auth.verify_password(payload.code.strip(), db_user.verification_code_hash):
-        raise HTTPException(status_code=400, detail="Invalid verification code")
+        _record_auth_failure(scope="verify-email", identity=email, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
 
     db_user.is_email_verified = True
     db_user.verification_code = None
@@ -685,6 +821,7 @@ def verify_email(payload: schemas.UserVerifyEmail, db: Session = Depends(databas
         db_user.is_verified = True
     db.commit()
     db.refresh(db_user)
+    _clear_auth_failures("verify-email", email)
     return db_user
 
 @router.post("/request-verification")
@@ -731,20 +868,26 @@ def request_verification(payload: schemas.UserRequestVerification, db: Session =
     return {"message": "Verification code sent"}
 
 @router.post("/verify-phone", response_model=schemas.User)
-def verify_phone(payload: schemas.UserVerifyPhone, db: Session = Depends(database.get_db)):
+def verify_phone(request: Request, payload: schemas.UserVerifyPhone, db: Session = Depends(database.get_db)):
     email = _normalize_email(str(payload.email))
+    _enforce_auth_attempt_limit(scope="verify-phone", identity=email, request=request)
     user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        # Same response for unknown accounts to avoid account enumeration.
+        _record_auth_failure(scope="verify-phone", identity=email, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
     if getattr(user, "is_phone_verified", False):
         return user
     if not getattr(user, "phone_verification_code_hash", None) or not getattr(user, "phone_verification_expires_at", None):
-        raise HTTPException(status_code=400, detail="Verification code not found")
+        _record_auth_failure(scope="verify-phone", identity=email, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
     expires_at = _as_utc(getattr(user, "phone_verification_expires_at", None))
     if not expires_at or datetime.now(timezone.utc) > expires_at:
-        raise HTTPException(status_code=400, detail="Verification code expired")
+        _record_auth_failure(scope="verify-phone", identity=email, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
     if not auth.verify_password(payload.code.strip(), getattr(user, "phone_verification_code_hash", "")):
-        raise HTTPException(status_code=400, detail="Invalid verification code")
+        _record_auth_failure(scope="verify-phone", identity=email, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
     user.is_phone_verified = True
     user.phone_verification_code_hash = None
     user.phone_verification_expires_at = None
@@ -752,6 +895,7 @@ def verify_phone(payload: schemas.UserVerifyPhone, db: Session = Depends(databas
         user.is_verified = True
     db.commit()
     db.refresh(user)
+    _clear_auth_failures("verify-phone", email)
     return user
 
 @router.post("/request-phone-verification")
@@ -1081,13 +1225,16 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     raw_form = await request.form()
     remember_me = _parse_remember_me(raw_form.get("remember_me"))
     username = _normalize_email(str(form_data.username))
+    _enforce_auth_attempt_limit(scope="login", identity=username, request=request)
     user = db.query(models.User).filter(func.lower(models.User.email) == username).first()
     if not user or not auth.verify_password(form_data.password, user.hashed_password):
+        _record_auth_failure(scope="login", identity=username, request=request)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    _clear_auth_failures("login", username)
 
     now = datetime.now(timezone.utc)
     if getattr(user, "is_banned", False):
@@ -1114,18 +1261,22 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     return _issue_access_token_for_user(db=db, user=user, request=request, remember_me=remember_me)
 
 @router.post("/admin/login-start", response_model=schemas.AdminLoginStartResponse)
-def admin_login_start(payload: schemas.AdminLoginStartRequest, db: Session = Depends(database.get_db)):
+def admin_login_start(request: Request, payload: schemas.AdminLoginStartRequest, db: Session = Depends(database.get_db)):
     email = _normalize_email(str(payload.email))
+    _enforce_auth_attempt_limit(scope="admin-login", identity=email, request=request)
     user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
 
     if not user or not auth.verify_password(payload.password, user.hashed_password):
+        _record_auth_failure(scope="admin-login", identity=email, request=request)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
         )
     role_value = user.role.value if hasattr(user.role, "value") else user.role
     if role_value != "admin":
+        _record_auth_failure(scope="admin-login", identity=email, request=request)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    _clear_auth_failures("admin-login", email)
 
     now = datetime.now(timezone.utc)
     sent_at = _as_utc(getattr(user, "admin_2fa_sent_at", None))
@@ -1159,22 +1310,28 @@ def admin_login_start(payload: schemas.AdminLoginStartRequest, db: Session = Dep
 @router.post("/admin/verify-2fa", response_model=schemas.AuthResponse)
 def admin_verify_2fa(request: Request, payload: schemas.AdminVerify2FARequest, db: Session = Depends(database.get_db)):
     email = _normalize_email(str(payload.email))
+    _enforce_auth_attempt_limit(scope="admin2fa", identity=email, request=request)
     user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
     if not user:
+        _record_auth_failure(scope="admin2fa", identity=email, request=request)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     role_value = user.role.value if hasattr(user.role, "value") else user.role
     if role_value != "admin":
+        _record_auth_failure(scope="admin2fa", identity=email, request=request)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
     if not user.admin_2fa_code_hash or not user.admin_2fa_expires_at:
+        _record_auth_failure(scope="admin2fa", identity=email, request=request)
         raise HTTPException(status_code=400, detail="2FA not initiated")
 
     expires_at = _as_utc(user.admin_2fa_expires_at)
     if not expires_at or datetime.now(timezone.utc) > expires_at:
+        _record_auth_failure(scope="admin2fa", identity=email, request=request)
         raise HTTPException(status_code=400, detail="2FA code expired")
 
     if not auth.verify_password(payload.code.strip(), user.admin_2fa_code_hash):
+        _record_auth_failure(scope="admin2fa", identity=email, request=request)
         raise HTTPException(status_code=400, detail="Invalid 2FA code")
 
     user.admin_2fa_code_hash = None
@@ -1182,10 +1339,53 @@ def admin_verify_2fa(request: Request, payload: schemas.AdminVerify2FARequest, d
     user.auth_provider = user.auth_provider or "email"
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
+    _clear_auth_failures("admin2fa", email)
     return _issue_access_token_for_user(db=db, user=user, request=request, remember_me=payload.remember_me)
+
+def _resolve_impersonation_target(
+    db: Session,
+    *,
+    body: schemas.AdminImpersonateRequest,
+    target_role: str,
+) -> models.User:
+    """Resolve the account an admin asked to preview.
+
+    When a specific account is named, exactly that account is used: an unknown account or
+    one whose role differs fails instead of silently falling back to a different user.
+    Without an explicit account the most recent eligible account of the requested role is
+    selected (preview mode used by the admin preview page).
+    """
+    requested_id = getattr(body, "user_id", None)
+    requested_email = _normalize_email(str(getattr(body, "email", None) or ""))
+
+    if requested_id is not None or requested_email:
+        query = db.query(models.User)
+        if requested_id is not None:
+            query = query.filter(models.User.id == requested_id)
+        if requested_email:
+            query = query.filter(func.lower(models.User.email) == requested_email)
+        target = query.first()
+        if not target:
+            raise HTTPException(status_code=404, detail="Account not found")
+        resolved_role = target.role.value if hasattr(target.role, "value") else target.role
+        if resolved_role != target_role:
+            raise HTTPException(status_code=400, detail="Account does not match the requested role")
+        return target
+
+    query = db.query(models.User)
+    if target_role == "agency":
+        query = query.filter(models.User.role == models.UserRole.AGENCY).filter(models.User.agency_id.isnot(None))
+    else:
+        query = query.filter(models.User.role == models.UserRole.USER)
+
+    target = query.order_by(models.User.created_at.desc(), models.User.id.desc()).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="No account available for preview")
+    return target
 
 @router.post("/admin/impersonate", response_model=schemas.AuthResponse)
 def admin_impersonate(
+    request: Request,
     body: schemas.AdminImpersonateRequest,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(database.get_db),
@@ -1198,34 +1398,36 @@ def admin_impersonate(
     if target_role not in ("user", "agency"):
         raise HTTPException(status_code=400, detail="Invalid role")
 
-    q = db.query(models.User)
-    if target_role == "agency":
-        q = q.filter(models.User.role == models.UserRole.AGENCY).filter(models.User.agency_id.isnot(None))
-    else:
-        q = q.filter(models.User.role == models.UserRole.USER)
+    target = _resolve_impersonation_target(db, body=body, target_role=target_role)
 
-    target = q.order_by(models.User.created_at.desc(), models.User.id.desc()).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="No account available for preview")
+    # Issue the preview token through the standard issuer so every impersonation gets a
+    # real, revocable UserSession (with `sid`) that shows up in session management, but
+    # with a short impersonation-specific TTL.
+    response = _issue_access_token_for_user(
+        db=db,
+        user=target,
+        request=request,
+        expire_minutes=IMPERSONATION_TOKEN_EXPIRE_MINUTES,
+        session_provider="impersonation",
+    )
 
-    role_value = target.role.value if hasattr(target.role, "value") else target.role
-    token_payload: dict[str, object] = {"sub": target.email, "role": role_value}
-    if role_value == "agency":
-        latest_app = (
-            db.query(models.AgencyApplication)
-            .filter(models.AgencyApplication.user_id == target.id)
-            .order_by(models.AgencyApplication.submitted_at.desc())
-            .first()
+    issued_payload = auth.decode_access_token(response.get("access_token") or "") or {}
+    session_id = str(issued_payload.get("sid") or "").strip() or None
+    db.add(
+        models.ModerationLog(
+            entity_type="user",
+            entity_id=target.id,
+            user_id=target.id,
+            reporter_user_id=current_user.id,
+            reason="admin_impersonate",
+            action="impersonated",
+            note=f"{current_user.email} impersonated {target.email} (session {session_id or 'unknown'})",
+            reviewed_at=datetime.now(timezone.utc),
+            reviewed_by_user_id=current_user.id,
         )
-        token_payload["agency_id"] = target.agency_id
-        if latest_app and hasattr(latest_app.status, "value"):
-            token_payload["agency_status"] = latest_app.status.value
-        else:
-            token_payload["agency_status"] = "approved" if target.agency_id else None
-
-    access_token_expires = timedelta(minutes=auth.get_access_token_expire_minutes(role_value))
-    access_token = auth.create_access_token(data=token_payload, expires_delta=access_token_expires)
-    return {"access_token": access_token, "token_type": "bearer"}
+    )
+    db.commit()
+    return response
 
 @router.post("/change-password", response_model=dict)
 def change_password(
@@ -1320,17 +1522,22 @@ def forgot_password_phone(payload: schemas.ForgotPasswordByPhoneRequest, db: Ses
     return {"message": "If an account exists, a reset code has been sent"}
 
 @router.post("/reset-password", response_model=dict)
-def reset_password(payload: schemas.ResetPasswordRequest, db: Session = Depends(database.get_db)):
+def reset_password(request: Request, payload: schemas.ResetPasswordRequest, db: Session = Depends(database.get_db)):
     email = _normalize_email(str(payload.email))
+    _enforce_auth_attempt_limit(scope="reset", identity=email, request=request)
     user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
     if not user:
-        raise HTTPException(status_code=400, detail="Invalid reset request")
+        # Same response for unknown accounts to avoid account enumeration.
+        _record_auth_failure(scope="reset", identity=email, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
     expires_at = _as_utc(getattr(user, "password_reset_expires_at", None))
     if not expires_at or datetime.now(timezone.utc) > expires_at:
-        raise HTTPException(status_code=400, detail="Reset code expired")
+        _record_auth_failure(scope="reset", identity=email, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
     token_hash = getattr(user, "password_reset_token_hash", None)
     if not token_hash or not auth.verify_password(payload.code.strip(), token_hash):
-        raise HTTPException(status_code=400, detail="Invalid reset code")
+        _record_auth_failure(scope="reset", identity=email, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
     try:
         auth.validate_strong_password(payload.new_password)
     except ValueError as e:
@@ -1340,20 +1547,25 @@ def reset_password(payload: schemas.ResetPasswordRequest, db: Session = Depends(
     user.password_reset_expires_at = None
     user.password_reset_sent_at = None
     db.commit()
+    _clear_auth_failures("reset", email)
     return {"message": "ok"}
 
 @router.post("/reset-password-phone", response_model=dict)
-def reset_password_phone(payload: schemas.ResetPasswordByPhoneRequest, db: Session = Depends(database.get_db)):
+def reset_password_phone(request: Request, payload: schemas.ResetPasswordByPhoneRequest, db: Session = Depends(database.get_db)):
     phone = _normalize_phone(str(payload.phone_number))
+    _enforce_auth_attempt_limit(scope="reset-phone", identity=phone, request=request)
     user = db.query(models.User).filter(models.User.phone_number == phone).first()
     if not user:
-        raise HTTPException(status_code=400, detail="Invalid reset request")
+        _record_auth_failure(scope="reset-phone", identity=phone, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
     expires_at = _as_utc(getattr(user, "password_reset_expires_at", None))
     if not expires_at or datetime.now(timezone.utc) > expires_at:
-        raise HTTPException(status_code=400, detail="Reset code expired")
+        _record_auth_failure(scope="reset-phone", identity=phone, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
     token_hash = getattr(user, "password_reset_token_hash", None)
     if not token_hash or not auth.verify_password(payload.code.strip(), token_hash):
-        raise HTTPException(status_code=400, detail="Invalid reset code")
+        _record_auth_failure(scope="reset-phone", identity=phone, request=request)
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
     try:
         auth.validate_strong_password(payload.new_password)
     except ValueError as e:
@@ -1363,6 +1575,7 @@ def reset_password_phone(payload: schemas.ResetPasswordByPhoneRequest, db: Sessi
     user.password_reset_expires_at = None
     user.password_reset_sent_at = None
     db.commit()
+    _clear_auth_failures("reset-phone", phone)
     return {"message": "ok"}
 
 @router.post("/refresh", response_model=schemas.AuthResponse)
@@ -1391,39 +1604,11 @@ def refresh_access_token(
 
 @router.post("/social-login", response_model=schemas.AuthResponse)
 def social_login(request: Request, payload: schemas.SocialLoginRequest, db: Session = Depends(database.get_db)):
-    provider = (payload.provider or "").strip().lower()
-    if provider not in ("google", "apple"):
-        raise HTTPException(status_code=400, detail="Unsupported provider")
-
-    email = payload.email.strip().lower()
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if user:
-        role_value = user.role.value if hasattr(user.role, "value") else user.role
-        if role_value == "admin":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Use the admin login page")
-    else:
-        user = models.User(
-            email=email,
-            full_name=payload.full_name or email,
-            hashed_password=auth.get_password_hash(secrets.token_urlsafe(18)),
-            role=models.UserRole.USER,
-            auth_provider=provider,
-            is_verified=True,
-            is_email_verified=True,
-            is_phone_verified=True,
-            onboarding_completed=False,
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    if not getattr(user, "is_email_verified", False) or not getattr(user, "is_phone_verified", False) or not getattr(user, "is_verified", False):
-        user.is_email_verified = True
-        user.is_phone_verified = True
-        user.is_verified = True
-        user.email_verification_token_hash = None
-        user.email_verification_token_expires_at = None
-    user.auth_provider = provider
-    user.last_login_at = datetime.now(timezone.utc)
-    db.commit()
-    return _issue_access_token_for_user(db=db, user=user, request=request, remember_me=payload.remember_me)
+    # SECURITY: social login is disabled until real Google/Apple ID token verification
+    # (signature, issuer, audience, nonce, expiry) is implemented. A client-supplied email
+    # must never be trusted: this endpoint does not look up, create or verify any user, does
+    # not issue a session, and does not touch verification state.
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Social login is currently unavailable. Please sign in with email and password.",
+    )

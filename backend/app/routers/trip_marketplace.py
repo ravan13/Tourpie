@@ -23,6 +23,16 @@ PACKAGE_STATUSES = {"active", "published", "live", "available"}
 DOCUMENT_FILE_URL_MAX_LENGTH = 2048
 INTERNAL_STORAGE_KEY_RE = re.compile(r"^/?uploads(?:/[A-Za-z0-9._-]+)+$")
 
+# Role-based transition allowlists. Customers may only cancel their own bookings,
+# submit a payment as "sent" and mark documents as "viewed"; every other status is
+# agency/admin controlled.
+TRIP_BOOKING_STATUSES = {s.value for s in models.TripBookingStatus}
+CUSTOMER_BOOKING_STATUSES = {"cancelled"}
+CUSTOMER_PAYMENT_STATUSES = {"payment_sent"}
+CUSTOMER_DOCUMENT_STATUSES = {"viewed"}
+AGENCY_DOCUMENT_STATUSES = {"viewed", "approved", "rejected"}
+STAFF_ROLES = ("agency", "admin")
+
 
 def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
@@ -2139,6 +2149,13 @@ def admin_list_trip_offers(
     return rows
 
 
+def _role_value(user: Optional[models.User]) -> Optional[str]:
+    role = getattr(user, "role", None) if user is not None else None
+    if role is None:
+        return None
+    return getattr(role, "value", role)
+
+
 def _require_booking_access(user: models.User, booking: models.TripBooking) -> None:
     role_value = getattr(user.role, "value", user.role) if user.role else None
     if role_value == "admin":
@@ -2421,8 +2438,12 @@ def set_trip_booking_status(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     _require_booking_access(user, booking)
-    role_value = getattr(user.role, "value", user.role) if user.role else None
+    role_value = _role_value(user)
     new_status = (body.status or "").strip().lower()
+    if new_status not in TRIP_BOOKING_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid booking status")
+    if role_value not in STAFF_ROLES and new_status not in CUSTOMER_BOOKING_STATUSES:
+        raise HTTPException(status_code=403, detail="Not allowed")
     now = _utcnow()
     if new_status in ("travelling",):
         booking.trip_started_at = now
@@ -2557,6 +2578,10 @@ def set_trip_booking_document_status(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     new_status = (body.status or "").strip().lower()
+    if new_status not in AGENCY_DOCUMENT_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    if new_status not in CUSTOMER_DOCUMENT_STATUSES and _role_value(user) not in STAFF_ROLES:
+        raise HTTPException(status_code=403, detail="Not allowed")
     now = _utcnow()
     if new_status == "viewed":
         doc.status = models.TripBookingDocumentStatus.VIEWED
@@ -2617,7 +2642,7 @@ def upsert_trip_booking_payment(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     _require_booking_access(user, booking)
-    role_value = getattr(user.role, "value", user.role) if user.role else None
+    role_value = _role_value(user)
     payment = (
         db.query(models.TripBookingPaymentRecord)
         .filter(models.TripBookingPaymentRecord.booking_id == booking.id)
@@ -2645,8 +2670,11 @@ def upsert_trip_booking_payment(
             "customer_confirmed": models.TripBookingPaymentStatus.CUSTOMER_CONFIRMED,
             "completed": models.TripBookingPaymentStatus.COMPLETED,
         }
-        mapped = mapping.get(s, models.TripBookingPaymentStatus.WAITING)
-        payment.status = mapped
+        if s not in mapping:
+            raise HTTPException(status_code=400, detail="Invalid payment status")
+        if role_value not in STAFF_ROLES and s not in CUSTOMER_PAYMENT_STATUSES:
+            raise HTTPException(status_code=403, detail="Only agency/admin can set this payment status")
+        payment.status = mapping[s]
         event_note = f"Payment status: {s}"
     if body.payment_method:
         payment.payment_method = body.payment_method

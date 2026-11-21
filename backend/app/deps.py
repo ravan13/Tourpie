@@ -9,14 +9,13 @@ from . import auth, database, models
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
 oauth2_optional = OAuth2PasswordBearer(tokenUrl="users/login", auto_error=False)
 
-def get_current_user(
-    request: Request,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(database.get_db),
-) -> models.User:
-    payload = auth.decode_access_token(token)
-    if not payload or not payload.get("sub"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+def _load_user_from_payload(payload: dict, db: Session) -> models.User:
+    """Hardened resolution shared by required and optional authentication.
+
+    Validates the account, the session id (`sid`) against the stored session, the
+    session revocation/expiry state and the ban status. Raises HTTPException when
+    any check fails.
+    """
     sub = str(payload["sub"]).strip().lower()
     user = db.query(models.User).filter(func.lower(models.User.email) == sub).first()
     if not user:
@@ -54,15 +53,33 @@ def get_current_user(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account restricted")
     return user
 
+def get_current_user(
+    request: Request,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(database.get_db),
+) -> models.User:
+    payload = auth.decode_access_token(token)
+    if not payload or not payload.get("sub"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    return _load_user_from_payload(payload, db)
+
 def get_optional_user(token: str | None = Depends(oauth2_optional), db: Session = Depends(database.get_db)) -> models.User | None:
+    """Optional authentication for public endpoints.
+
+    The user is returned only when the JWT signature/expiry, the session id, the
+    session revocation/expiry state and the ban status are all valid. Anonymous
+    requests, and requests carrying an invalid, expired or revoked token (or a banned
+    account), resolve to None so public endpoints remain anonymously usable.
+    """
     if not token:
         return None
     payload = auth.decode_access_token(token)
     if not payload or not payload.get("sub"):
         return None
-    sub = str(payload["sub"]).strip().lower()
-    user = db.query(models.User).filter(func.lower(models.User.email) == sub).first()
-    return user
+    try:
+        return _load_user_from_payload(payload, db)
+    except HTTPException:
+        return None
 
 def get_token_payload(token: str = Depends(oauth2_scheme)) -> dict:
     payload = auth.decode_access_token(token)

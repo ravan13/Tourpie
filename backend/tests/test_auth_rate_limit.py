@@ -326,5 +326,79 @@ class AdminTwoFactorBruteForceTests(AttemptLimitBase):
         self.assertNotIn(users._attempt_account_key("admin2fa", admin.email), users._attempt_windows)
 
 
+class AdminLoginStartBruteForceTests(AttemptLimitBase):
+    """H-5: the admin password step must be throttled before any database access."""
+
+    def run_start(self, email, password, request, db):
+        payload = schemas.AdminLoginStartRequest(email=email, password=password)
+        return users.admin_login_start(request, payload, db)
+
+    def test_unknown_admin_email_locked_out_after_max_failures(self):
+        request = FakeRequest(ip="203.0.113.40")
+        for _ in range(users.AUTH_MAX_FAILED_PER_ACCOUNT):
+            with self.assertRaises(HTTPException) as ctx:
+                self.run_start("nobody@example.com", WRONG_CODE, request, FakeDb(user=None))
+            self.assertEqual(ctx.exception.status_code, 401)
+        with self.assertRaises(HTTPException) as ctx:
+            self.run_start("nobody@example.com", WRONG_CODE, request, FakeDb(user=None))
+        self.assert429(ctx.exception)
+
+    def test_wrong_password_locked_out_for_known_admin(self):
+        admin = make_user(role=models.UserRole.ADMIN)
+        request = FakeRequest(ip="203.0.113.41")
+        for _ in range(users.AUTH_MAX_FAILED_PER_ACCOUNT):
+            with self.assertRaises(HTTPException) as ctx:
+                self.run_start(admin.email, WRONG_CODE, request, FakeDb(user=admin))
+            self.assertEqual(ctx.exception.status_code, 401)
+        with self.assertRaises(HTTPException) as ctx:
+            self.run_start(admin.email, WRONG_CODE, request, FakeDb(user=admin))
+        self.assert429(ctx.exception)
+
+    def test_lockout_is_checked_before_database_access(self):
+        request = FakeRequest(ip="203.0.113.42")
+        for _ in range(users.AUTH_MAX_FAILED_PER_ACCOUNT + 1):
+            try:
+                self.run_start("nobody@example.com", WRONG_CODE, request, FakeDb(user=None))
+            except HTTPException:
+                pass
+        with self.assertRaises(HTTPException) as ctx:
+            self.run_start("nobody@example.com", WRONG_CODE, request, RaisingDb())
+        self.assert429(ctx.exception)
+
+    def test_valid_password_on_non_admin_account_is_counted(self):
+        user = make_user(role=models.UserRole.USER)
+        request = FakeRequest(ip="203.0.113.43")
+        for _ in range(users.AUTH_MAX_FAILED_PER_ACCOUNT):
+            with self.assertRaises(HTTPException) as ctx:
+                self.run_start(user.email, GOOD_CODE, request, FakeDb(user=user))
+            self.assertEqual(ctx.exception.status_code, 403)
+        with self.assertRaises(HTTPException) as ctx:
+            self.run_start(user.email, GOOD_CODE, request, FakeDb(user=user))
+        self.assert429(ctx.exception)
+
+    def test_successful_start_preserved_and_clears_failures(self):
+        admin = make_user(role=models.UserRole.ADMIN)
+        request = FakeRequest(ip="203.0.113.44")
+        for _ in range(2):
+            with self.assertRaises(HTTPException):
+                self.run_start(admin.email, WRONG_CODE, request, FakeDb(user=admin))
+        with patch.object(users, "_send_email_or_raise") as sender:
+            result = self.run_start(admin.email, GOOD_CODE, request, FakeDb(user=admin))
+        self.assertTrue(result.two_factor_required)
+        sender.assert_called_once()
+        self.assertNotIn(users._attempt_account_key("admin-login", admin.email), users._attempt_windows)
+
+    def test_success_still_issues_two_factor_challenge(self):
+        admin = make_user(role=models.UserRole.ADMIN)
+        request = FakeRequest(ip="203.0.113.45")
+        with patch.object(users, "_send_email_or_raise"):
+            result = self.run_start(admin.email, GOOD_CODE, request, FakeDb(user=admin))
+        self.assertTrue(result.two_factor_required)
+        self.assertIsNotNone(admin.admin_2fa_code_hash)
+        self.assertIsNotNone(admin.admin_2fa_expires_at)
+        # the password scope and the 2FA scope are tracked independently
+        self.assertNotIn(users._attempt_account_key("admin2fa", admin.email), users._attempt_windows)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

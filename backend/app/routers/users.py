@@ -1261,18 +1261,22 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     return _issue_access_token_for_user(db=db, user=user, request=request, remember_me=remember_me)
 
 @router.post("/admin/login-start", response_model=schemas.AdminLoginStartResponse)
-def admin_login_start(payload: schemas.AdminLoginStartRequest, db: Session = Depends(database.get_db)):
+def admin_login_start(request: Request, payload: schemas.AdminLoginStartRequest, db: Session = Depends(database.get_db)):
     email = _normalize_email(str(payload.email))
+    _enforce_auth_attempt_limit(scope="admin-login", identity=email, request=request)
     user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
 
     if not user or not auth.verify_password(payload.password, user.hashed_password):
+        _record_auth_failure(scope="admin-login", identity=email, request=request)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
         )
     role_value = user.role.value if hasattr(user.role, "value") else user.role
     if role_value != "admin":
+        _record_auth_failure(scope="admin-login", identity=email, request=request)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    _clear_auth_failures("admin-login", email)
 
     now = datetime.now(timezone.utc)
     sent_at = _as_utc(getattr(user, "admin_2fa_sent_at", None))

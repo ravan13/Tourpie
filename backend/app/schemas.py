@@ -290,6 +290,8 @@ class AdminVerify2FARequest(BaseModel):
 
 class AdminImpersonateRequest(BaseModel):
     role: str
+    user_id: Optional[int] = None
+    email: Optional[EmailStr] = None
 
 class SocialLoginRequest(BaseModel):
     provider: str

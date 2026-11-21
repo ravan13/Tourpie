@@ -120,10 +120,13 @@ def _issue_access_token_for_user(
     request: Request,
     existing_session_id: Optional[str] = None,
     remember_me: bool = False,
+    expire_minutes: Optional[int] = None,
+    session_provider: Optional[str] = None,
 ) -> schemas.AuthResponse:
     now = datetime.now(timezone.utc)
     role_value = user.role.value if hasattr(user.role, "value") else user.role
-    expires_delta = timedelta(minutes=auth.get_access_token_expire_minutes(role_value, remember_me=remember_me))
+    ttl_minutes = int(expire_minutes) if expire_minutes and int(expire_minutes) > 0 else auth.get_access_token_expire_minutes(role_value, remember_me=remember_me)
+    expires_delta = timedelta(minutes=ttl_minutes)
     expires_at = now + expires_delta
 
     session: models.UserSession | None = None
@@ -147,7 +150,7 @@ def _issue_access_token_for_user(
         db.add(session)
 
     user_agent = (request.headers.get("user-agent") or "").strip() or None
-    session.auth_provider = user.auth_provider or "email"
+    session.auth_provider = session_provider or (user.auth_provider or "email")
     session.device_label = _describe_client_device(user_agent)
     session.user_agent = user_agent[:500] if user_agent else None
     session.ip_address = _extract_client_ip(request)
@@ -221,6 +224,8 @@ OTP_EXPIRE_MINUTES = int(os.getenv("OTP_EXPIRE_MINUTES", "5"))
 OTP_RESEND_COOLDOWN_SECONDS = int(os.getenv("OTP_RESEND_COOLDOWN_SECONDS", "60"))
 EMAIL_VERIFICATION_LINK_EXPIRE_HOURS = int(os.getenv("EMAIL_VERIFICATION_LINK_EXPIRE_HOURS", "24"))
 EMAIL_CHANGE_LINK_EXPIRE_HOURS = int(os.getenv("EMAIL_CHANGE_LINK_EXPIRE_HOURS", "24"))
+# Admin impersonation tokens are deliberately short lived and configurable.
+IMPERSONATION_TOKEN_EXPIRE_MINUTES = max(1, int(os.getenv("IMPERSONATION_TOKEN_EXPIRE_MINUTES", "15")))
 
 def _parse_remember_me(value: object) -> bool:
     if isinstance(value, bool):
@@ -1309,8 +1314,50 @@ def admin_verify_2fa(request: Request, payload: schemas.AdminVerify2FARequest, d
     _clear_auth_failures("admin2fa", email)
     return _issue_access_token_for_user(db=db, user=user, request=request, remember_me=payload.remember_me)
 
+def _resolve_impersonation_target(
+    db: Session,
+    *,
+    body: schemas.AdminImpersonateRequest,
+    target_role: str,
+) -> models.User:
+    """Resolve the account an admin asked to preview.
+
+    When a specific account is named, exactly that account is used: an unknown account or
+    one whose role differs fails instead of silently falling back to a different user.
+    Without an explicit account the most recent eligible account of the requested role is
+    selected (preview mode used by the admin preview page).
+    """
+    requested_id = getattr(body, "user_id", None)
+    requested_email = _normalize_email(str(getattr(body, "email", None) or ""))
+
+    if requested_id is not None or requested_email:
+        query = db.query(models.User)
+        if requested_id is not None:
+            query = query.filter(models.User.id == requested_id)
+        if requested_email:
+            query = query.filter(func.lower(models.User.email) == requested_email)
+        target = query.first()
+        if not target:
+            raise HTTPException(status_code=404, detail="Account not found")
+        resolved_role = target.role.value if hasattr(target.role, "value") else target.role
+        if resolved_role != target_role:
+            raise HTTPException(status_code=400, detail="Account does not match the requested role")
+        return target
+
+    query = db.query(models.User)
+    if target_role == "agency":
+        query = query.filter(models.User.role == models.UserRole.AGENCY).filter(models.User.agency_id.isnot(None))
+    else:
+        query = query.filter(models.User.role == models.UserRole.USER)
+
+    target = query.order_by(models.User.created_at.desc(), models.User.id.desc()).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="No account available for preview")
+    return target
+
 @router.post("/admin/impersonate", response_model=schemas.AuthResponse)
 def admin_impersonate(
+    request: Request,
     body: schemas.AdminImpersonateRequest,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(database.get_db),
@@ -1323,34 +1370,36 @@ def admin_impersonate(
     if target_role not in ("user", "agency"):
         raise HTTPException(status_code=400, detail="Invalid role")
 
-    q = db.query(models.User)
-    if target_role == "agency":
-        q = q.filter(models.User.role == models.UserRole.AGENCY).filter(models.User.agency_id.isnot(None))
-    else:
-        q = q.filter(models.User.role == models.UserRole.USER)
+    target = _resolve_impersonation_target(db, body=body, target_role=target_role)
 
-    target = q.order_by(models.User.created_at.desc(), models.User.id.desc()).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="No account available for preview")
+    # Issue the preview token through the standard issuer so every impersonation gets a
+    # real, revocable UserSession (with `sid`) that shows up in session management, but
+    # with a short impersonation-specific TTL.
+    response = _issue_access_token_for_user(
+        db=db,
+        user=target,
+        request=request,
+        expire_minutes=IMPERSONATION_TOKEN_EXPIRE_MINUTES,
+        session_provider="impersonation",
+    )
 
-    role_value = target.role.value if hasattr(target.role, "value") else target.role
-    token_payload: dict[str, object] = {"sub": target.email, "role": role_value}
-    if role_value == "agency":
-        latest_app = (
-            db.query(models.AgencyApplication)
-            .filter(models.AgencyApplication.user_id == target.id)
-            .order_by(models.AgencyApplication.submitted_at.desc())
-            .first()
+    issued_payload = auth.decode_access_token(response.get("access_token") or "") or {}
+    session_id = str(issued_payload.get("sid") or "").strip() or None
+    db.add(
+        models.ModerationLog(
+            entity_type="user",
+            entity_id=target.id,
+            user_id=target.id,
+            reporter_user_id=current_user.id,
+            reason="admin_impersonate",
+            action="impersonated",
+            note=f"{current_user.email} impersonated {target.email} (session {session_id or 'unknown'})",
+            reviewed_at=datetime.now(timezone.utc),
+            reviewed_by_user_id=current_user.id,
         )
-        token_payload["agency_id"] = target.agency_id
-        if latest_app and hasattr(latest_app.status, "value"):
-            token_payload["agency_status"] = latest_app.status.value
-        else:
-            token_payload["agency_status"] = "approved" if target.agency_id else None
-
-    access_token_expires = timedelta(minutes=auth.get_access_token_expire_minutes(role_value))
-    access_token = auth.create_access_token(data=token_payload, expires_delta=access_token_expires)
-    return {"access_token": access_token, "token_type": "bearer"}
+    )
+    db.commit()
+    return response
 
 @router.post("/change-password", response_model=dict)
 def change_password(

@@ -4,7 +4,14 @@ from .database import SessionLocal, engine, Base
 from . import models, auth
 import datetime
 import json
+import logging
+import os
 import sys
+
+# Environment detection mirrors app.main / app.auth so production is consistently
+# recognised. Demo seeding must not create default credential accounts in production.
+_env_name = (os.getenv("TOURPIE_ENV") or os.getenv("ENVIRONMENT") or os.getenv("ENV") or "development").strip().lower()
+_is_prod = _env_name in ("prod", "production")
 
 def seed_db():
     # Create tables
@@ -235,6 +242,16 @@ def seed_db():
         if not exists:
             db.add(models.BlogArticle(**a_data))
             db.commit()
+
+    # The demo accounts below use hardcoded default credentials and must never be
+    # created in production. Real users are provisioned through the application or
+    # the admin password reset command.
+    if _is_prod:
+        logging.getLogger(__name__).warning(
+            "Skipping demo account seeding in production: hardcoded default credentials are disabled."
+        )
+        print("Database seeded (content only); demo accounts are disabled in production.")
+        return
 
     # Create a user
     user = db.query(models.User).filter(models.User.email == "user@example.com").first()

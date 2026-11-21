@@ -60,6 +60,13 @@ const PAYMENT_STATUS_LABEL: Record<string, string> = {
   completed: "Completed",
 };
 
+// Agency/admin own the payment lifecycle; a customer may only report that the payment was sent.
+const PAYMENT_STATUS_OPTIONS = Object.keys(PAYMENT_STATUS_LABEL);
+const CUSTOMER_PAYMENT_STATUS_OPTIONS = ["payment_sent"];
+// Statuses a customer may (re)assert. Once the status has moved past these (agency_confirmed,
+// customer_confirmed, completed), a customer edit must leave the status untouched.
+const CUSTOMER_SUBMITTABLE_PAYMENT_STATUSES = ["waiting_payment", "payment_sent"];
+
 const EVENT_LABEL: Record<string, string> = {
   request_created: "Request Created",
   booking_created: "Booking Created",
@@ -299,6 +306,8 @@ export default function DashboardTripBookingWorkspacePage() {
   const isAgency = user?.role === "agency";
   const isUser = user?.role === "user";
   const isAdmin = user?.role === "admin";
+  const paymentStatusOptions = isAgency || isAdmin ? PAYMENT_STATUS_OPTIONS : CUSTOMER_PAYMENT_STATUS_OPTIONS;
+  const selectedPaymentStatus = paymentStatusOptions.includes(pmtStatus) ? pmtStatus : paymentStatusOptions[0];
   const booking = ws?.booking;
   const req = ws?.trip_request;
   const ofr = ws?.trip_offer;
@@ -313,6 +322,13 @@ export default function DashboardTripBookingWorkspacePage() {
   const completedFor: TripBookingPaymentRecord | undefined = payments[0];
   const agencyConfirmed = !!completedFor?.agency_confirmed_at;
   const customerConfirmed = !!completedFor?.customer_confirmed_at;
+  const isStaff = isAgency || isAdmin;
+  // Customers never downgrade a status the agency has already advanced: in that case the
+  // status is omitted from the payload and only the other payment details are saved.
+  const currentPaymentStatus = completedFor?.status ?? null;
+  const customerPaymentStatusLocked =
+    !isStaff && !!currentPaymentStatus && !CUSTOMER_SUBMITTABLE_PAYMENT_STATUSES.includes(currentPaymentStatus);
+  const submittedPaymentStatus = customerPaymentStatusLocked ? null : selectedPaymentStatus || null;
   const checklistTotal = checklist.length || booking?.checklist_total || 0;
   const checklistCompleted = checklist.filter((i) => i.is_completed).length || booking?.checklist_completed || 0;
   const bookingCompletedOrReviewed = booking?.status === "completed" || booking?.status === "reviewed" || !!booking?.trip_completed_at;
@@ -392,7 +408,7 @@ export default function DashboardTripBookingWorkspacePage() {
     try {
       const amount = pmtAmount.trim() !== "" && Number.isFinite(Number(pmtAmount)) ? Number(pmtAmount) : null;
       await api.tripMarketplace.upsertBookingPayment(booking.id, {
-        status: pmtStatus || null,
+        status: submittedPaymentStatus,
         payment_method: pmtMethod || null,
         reference_number: pmtRef.trim() || null,
         amount,
@@ -1018,13 +1034,13 @@ export default function DashboardTripBookingWorkspacePage() {
                     <label className="block">
                       <div className="text-xs font-bold text-gray-500 mb-1.5">Status</div>
                       <select
-                        value={pmtStatus}
+                        value={selectedPaymentStatus}
                         onChange={(e) => setPmtStatus(e.target.value)}
                         className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-900 focus:border-indigo-500 focus:ring-0 outline-none"
                       >
-                        {Object.entries(PAYMENT_STATUS_LABEL).map(([k, v]) => (
+                        {paymentStatusOptions.map((k) => (
                           <option key={k} value={k}>
-                            {v}
+                            {PAYMENT_STATUS_LABEL[k]}
                           </option>
                         ))}
                       </select>

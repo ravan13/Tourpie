@@ -5,6 +5,10 @@ import { api, getRememberMePreference, loadCurrentUser, setSessionToken, syncCur
 import { useLanguage } from "@/context/LanguageContext";
 import { useRouter } from "next/navigation";
 
+// Social login is disabled until the backend verifies real Google/Apple ID tokens.
+// The API endpoint `/users/social-login` responds 501 until that verification exists.
+const SOCIAL_LOGIN_ENABLED = false;
+
 export default function AuthForms() {
   const { t, language } = useLanguage();
   const router = useRouter();
@@ -146,6 +150,10 @@ export default function AuthForms() {
         : t("auth_verify_subtitle", { email });
 
   const completeSocialLogin = async (provider: "google" | "apple", socialEmail: string) => {
+    if (!SOCIAL_LOGIN_ENABLED) {
+      setMessage({ type: "error", text: t("auth_error") });
+      return;
+    }
     setLoading(true);
     setMessage(null);
     try {
@@ -499,6 +507,8 @@ export default function AuthForms() {
           <p className="text-sm text-gray-500 font-medium text-center mb-6">{t("auth_method_subtitle")}</p>
 
           <div className="space-y-3">
+            {SOCIAL_LOGIN_ENABLED && (
+              <>
             <button
               type="button"
               onClick={() => void handleSocial("google")}
@@ -524,6 +534,8 @@ export default function AuthForms() {
               </svg>
               {t("auth_apple")}
             </button>
+              </>
+            )}
             <button
               type="button"
               onClick={() => {

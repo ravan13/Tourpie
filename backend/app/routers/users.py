@@ -1391,39 +1391,11 @@ def refresh_access_token(
 
 @router.post("/social-login", response_model=schemas.AuthResponse)
 def social_login(request: Request, payload: schemas.SocialLoginRequest, db: Session = Depends(database.get_db)):
-    provider = (payload.provider or "").strip().lower()
-    if provider not in ("google", "apple"):
-        raise HTTPException(status_code=400, detail="Unsupported provider")
-
-    email = payload.email.strip().lower()
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if user:
-        role_value = user.role.value if hasattr(user.role, "value") else user.role
-        if role_value == "admin":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Use the admin login page")
-    else:
-        user = models.User(
-            email=email,
-            full_name=payload.full_name or email,
-            hashed_password=auth.get_password_hash(secrets.token_urlsafe(18)),
-            role=models.UserRole.USER,
-            auth_provider=provider,
-            is_verified=True,
-            is_email_verified=True,
-            is_phone_verified=True,
-            onboarding_completed=False,
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    if not getattr(user, "is_email_verified", False) or not getattr(user, "is_phone_verified", False) or not getattr(user, "is_verified", False):
-        user.is_email_verified = True
-        user.is_phone_verified = True
-        user.is_verified = True
-        user.email_verification_token_hash = None
-        user.email_verification_token_expires_at = None
-    user.auth_provider = provider
-    user.last_login_at = datetime.now(timezone.utc)
-    db.commit()
-    return _issue_access_token_for_user(db=db, user=user, request=request, remember_me=payload.remember_me)
+    # SECURITY: social login is disabled until real Google/Apple ID token verification
+    # (signature, issuer, audience, nonce, expiry) is implemented. A client-supplied email
+    # must never be trusted: this endpoint does not look up, create or verify any user, does
+    # not issue a session, and does not touch verification state.
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Social login is currently unavailable. Please sign in with email and password.",
+    )

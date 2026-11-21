@@ -27,11 +27,63 @@ load_dotenv(_base_dir.parent / ".env", override=False)
 _env_name = (os.getenv("TOURPIE_ENV") or os.getenv("ENVIRONMENT") or os.getenv("ENV") or "development").strip().lower()
 _is_prod = _env_name in ("prod", "production")
 
-SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY or SECRET_KEY.strip() in ("", "your-secret-key-for-development"):
-    if _is_prod:
+# Development fallback secret. In production the key is never defaulted silently.
+DEV_SECRET_KEY = "your-secret-key-for-development"
+# Placeholder / obviously-guessable secrets that must never be accepted in production.
+WEAK_SECRET_KEYS = {
+    DEV_SECRET_KEY,
+    "changeme",
+    "change-me",
+    "change_me",
+    "secret",
+    "secret-key",
+    "secretkey",
+    "password",
+    "passw0rd",
+    "test",
+    "dev",
+    "development",
+    "tourpie",
+    "tourpie-secret",
+    "your-secret-key",
+    "yoursecretkey",
+    "supersecret",
+    "0123456789",
+}
+# Minimum length (an entropy floor) required of a production secret.
+try:
+    _min_secret_len = int(os.getenv("MIN_SECRET_KEY_LENGTH") or "32")
+except ValueError:
+    _min_secret_len = 32
+MIN_PRODUCTION_SECRET_KEY_LENGTH = max(16, _min_secret_len)
+
+def resolve_secret_key(raw_value: Optional[str], *, is_production: bool) -> str:
+    """Resolve the effective SECRET_KEY without ever silently weakening production.
+
+    - Non-production: preserves the existing behaviour - a missing, empty, whitespace-only
+      or dev-default value falls back to ``DEV_SECRET_KEY``; any other value is returned
+      exactly as provided (whitespace included).
+    - Production: a missing, whitespace-only, placeholder, dev-default or too-short key
+      raises ``RuntimeError`` so the app refuses to start instead of running on a weak
+      secret. A valid key is returned exactly as provided.
+    """
+    raw = raw_value or ""
+    stripped = raw.strip()
+    if not is_production:
+        if not stripped or stripped == DEV_SECRET_KEY:
+            return DEV_SECRET_KEY
+        return raw
+    if not stripped:
         raise RuntimeError("SECRET_KEY must be set in production.")
-    SECRET_KEY = "your-secret-key-for-development"
+    if stripped in WEAK_SECRET_KEYS:
+        raise RuntimeError("SECRET_KEY must not be a development or placeholder value in production.")
+    if len(stripped) < MIN_PRODUCTION_SECRET_KEY_LENGTH:
+        raise RuntimeError(
+            f"SECRET_KEY must be at least {MIN_PRODUCTION_SECRET_KEY_LENGTH} characters in production."
+        )
+    return raw
+
+SECRET_KEY = resolve_secret_key(os.getenv("SECRET_KEY"), is_production=_is_prod)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 ACCESS_TOKEN_EXPIRE_ADMIN_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_ADMIN_MINUTES", "15"))

@@ -17,8 +17,8 @@ import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "
 import { useRouter } from "next/navigation";
 import { Button, Card, CardDescription, CardHeader, CardTitle, Input } from "@/components/ui";
 
-const AVATAR_ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"]);
-const AVATAR_ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "svg"]);
+const AVATAR_ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const AVATAR_ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
 const AVATAR_MAX_SIZE_BYTES = 2 * 1024 * 1024;
 const LOCALE_BY_LANGUAGE: Record<Language, string> = {
   en: "en-GB",
@@ -587,7 +587,7 @@ export default function SettingsPage() {
                         )}
                         <label className="mt-4 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-[1rem] border border-transparent bg-[linear-gradient(135deg,_rgba(2,42,107,0.98),_rgba(12,60,125,0.94)_55%,_rgba(255,106,26,0.94))] px-4 text-sm font-black tracking-[-0.01em] text-white shadow-[0_20px_48px_rgba(2,42,107,0.22)] transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_26px_60px_rgba(2,42,107,0.28)]">
                           {t("account_avatar_upload")}
-                          <input type="file" accept="image/*" className="hidden" onChange={onAvatarChange} />
+                          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={onAvatarChange} />
                         </label>
                         <button type="button" onClick={() => setAvatarUrl(null)} className="mt-3 text-sm font-black text-gray-500 hover:text-gray-900">
                           {t("common_remove")}

@@ -9,6 +9,7 @@ import base64
 import json
 import secrets
 from typing import List, Optional
+from urllib.parse import urlsplit
 from ..deps import get_current_user, get_token_payload
 import logging
 import os
@@ -16,8 +17,55 @@ import os
 router = APIRouter()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
-SUPPORTED_AVATAR_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"}
+# SVG is intentionally excluded: it is an active content type and would allow stored XSS.
+SUPPORTED_AVATAR_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+AVATAR_MAGIC_PREFIXES = {
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/gif": (b"GIF87a", b"GIF89a"),
+}
 MAX_AVATAR_UPLOAD_BYTES = 2 * 1024 * 1024
+MAX_AVATAR_URL_LENGTH = 2048
+
+def _avatar_data_url_matches_type(mime_type: str, decoded: bytes) -> bool:
+    if mime_type == "image/webp":
+        return len(decoded) >= 12 and decoded[:4] == b"RIFF" and decoded[8:12] == b"WEBP"
+    prefixes = AVATAR_MAGIC_PREFIXES.get(mime_type)
+    return bool(prefixes) and any(decoded.startswith(prefix) for prefix in prefixes)
+
+def _sanitize_avatar_url(value: Optional[str]) -> Optional[str]:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("data:"):
+        header, _, encoded = raw.partition(",")
+        if not header or not encoded:
+            raise HTTPException(status_code=400, detail="Invalid avatar image")
+        mime_type = header[5:].split(";", 1)[0].strip().lower()
+        if mime_type not in SUPPORTED_AVATAR_MIME_TYPES:
+            raise HTTPException(status_code=400, detail="Unsupported avatar image type")
+        if ";base64" not in header.lower():
+            raise HTTPException(status_code=400, detail="Invalid avatar image")
+        try:
+            decoded = base64.b64decode(encoded, validate=True)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid avatar image") from exc
+        if len(decoded) > MAX_AVATAR_UPLOAD_BYTES:
+            raise HTTPException(status_code=400, detail="Avatar image is too large")
+        if not _avatar_data_url_matches_type(mime_type, decoded):
+            raise HTTPException(status_code=400, detail="Avatar image does not match its declared type")
+        return raw
+    if len(raw) > MAX_AVATAR_URL_LENGTH:
+        raise HTTPException(status_code=400, detail="Avatar URL is too long")
+    if any(ch.isspace() or ord(ch) < 0x20 for ch in raw):
+        raise HTTPException(status_code=400, detail="Invalid avatar URL")
+    if "://" in raw:
+        parsed = urlsplit(raw)
+        # Only https is accepted: plain http is downgradeable and unsafe to embed.
+        if parsed.scheme.lower() != "https" or not parsed.netloc or "@" in parsed.netloc:
+            raise HTTPException(status_code=400, detail="Avatar URL must use https")
+        return raw
+    raise HTTPException(status_code=400, detail="Invalid avatar URL")
 
 def _normalize_email(email: str) -> str:
     return (email or "").strip().lower()
@@ -33,30 +81,6 @@ def _normalize_currency(value: Optional[str]) -> Optional[str]:
 def _normalize_time_zone(value: Optional[str]) -> Optional[str]:
     v = (value or "").strip()
     return v[:120] if v else None
-
-def _sanitize_avatar_url(value: Optional[str]) -> Optional[str]:
-    raw = (value or "").strip()
-    if not raw:
-        return None
-    if raw.startswith("data:image/"):
-        header, _, encoded = raw.partition(",")
-        if not header or not encoded:
-            raise HTTPException(status_code=400, detail="Invalid avatar image")
-        mime_type = header[5:].split(";", 1)[0].strip().lower()
-        if mime_type not in SUPPORTED_AVATAR_MIME_TYPES:
-            raise HTTPException(status_code=400, detail="Unsupported avatar image type")
-        if ";base64" not in header.lower():
-            raise HTTPException(status_code=400, detail="Invalid avatar image")
-        try:
-            decoded = base64.b64decode(encoded, validate=True)
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail="Invalid avatar image") from exc
-        if len(decoded) > MAX_AVATAR_UPLOAD_BYTES:
-            raise HTTPException(status_code=400, detail="Avatar image is too large")
-        return raw
-    if raw.startswith("http://") or raw.startswith("https://"):
-        return raw
-    raise HTTPException(status_code=400, detail="Invalid avatar URL")
 
 def _extract_client_ip(request: Request) -> Optional[str]:
     forwarded = (request.headers.get("x-forwarded-for") or "").strip()

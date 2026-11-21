@@ -566,10 +566,10 @@ export default function Navbar() {
 
   const uploadAvatar = async (file: File) => {
     if (!me) return;
-    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"]);
+    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
     const maxSize = 2 * 1024 * 1024;
     const ext = file.name.split(".").pop()?.toLowerCase() || "";
-    const okType = (file.type && allowedTypes.has(file.type)) || ["jpg", "jpeg", "png", "webp", "gif", "svg"].includes(ext);
+    const okType = (file.type && allowedTypes.has(file.type)) || ["jpg", "jpeg", "png", "webp", "gif"].includes(ext);
     if (!okType) return;
     if (file.size > maxSize) return;
 
@@ -1257,7 +1257,7 @@ export default function Navbar() {
         <input
           ref={avatarInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml"
+          accept="image/jpeg,image/png,image/webp,image/gif"
           className="hidden"
           onChange={onAvatarFileChange}
         />

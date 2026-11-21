@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import secrets
 from typing import List, Optional
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_
@@ -18,9 +20,40 @@ router = APIRouter()
 TRAVEL_STYLES = {"luxury", "budget", "adventure", "family", "romantic", "solo", "group"}
 PACKAGE_STATUSES = {"active", "published", "live", "available"}
 
+DOCUMENT_FILE_URL_MAX_LENGTH = 2048
+INTERNAL_STORAGE_KEY_RE = re.compile(r"^/?uploads(?:/[A-Za-z0-9._-]+)+$")
+
 
 def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _validate_document_file_url(value: Optional[str]) -> str:
+    """Accept only https:// URLs or internal storage keys (uploads/...) as document links.
+
+    Blocks dangerous schemes (javascript:, data:, file:), plain http, credential-bearing
+    URLs and traversal sequences, so a stored document link cannot become stored XSS or
+    escape the storage root.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="file_url required")
+    if len(raw) > DOCUMENT_FILE_URL_MAX_LENGTH:
+        raise HTTPException(status_code=400, detail="file_url is too long")
+    if any(char.isspace() or ord(char) < 0x20 for char in raw):
+        raise HTTPException(status_code=400, detail="file_url is invalid")
+
+    if not re.match(r"^[A-Za-z][A-Za-z0-9+.\-]*:", raw):
+        if not INTERNAL_STORAGE_KEY_RE.match(raw):
+            raise HTTPException(status_code=400, detail="file_url must be an https URL or an internal storage key")
+        if any(segment in ("", ".", "..") for segment in raw.strip("/").split("/")):
+            raise HTTPException(status_code=400, detail="file_url must be an https URL or an internal storage key")
+        return raw
+
+    parsed = urlsplit(raw)
+    if parsed.scheme.lower() != "https" or not parsed.netloc or "@" in parsed.netloc:
+        raise HTTPException(status_code=400, detail="file_url must be an https URL")
+    return raw
 
 
 def _parse_date(value: Optional[str]) -> Optional[datetime.date]:
@@ -2478,9 +2511,7 @@ def create_trip_booking_document(
         agency_id = _require_agency_access(user)
         if booking.agency_id != agency_id:
             raise HTTPException(status_code=403, detail="Not allowed")
-    file_url = body.file_url.strip()
-    if not file_url:
-        raise HTTPException(status_code=400, detail="file_url required")
+    file_url = _validate_document_file_url(body.file_url)
     doc = models.TripBookingDocument(
         booking_id=booking.id,
         uploader_user_id=user.id,

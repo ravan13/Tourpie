@@ -15,9 +15,11 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-env_file = BASE_DIR / ".env"
 
-load_dotenv(env_file, override=True)
+# Load local .env files without overriding variables already present in the OS
+# environment, consistent with app/database.py and app/auth.py.
+load_dotenv(BASE_DIR / ".env", override=False)
+load_dotenv(BASE_DIR.parent / ".env", override=False)
 
 _env_name = (os.getenv("TOURPIE_ENV") or os.getenv("ENVIRONMENT") or os.getenv("ENV") or "development").strip().lower()
 _is_prod = _env_name in ("prod", "production")

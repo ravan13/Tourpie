@@ -1,10 +1,11 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from .database import engine, Base
 from .routers import users, packages, bookings, agencies, recommendations, favorites, messages, notifications, community, blog, moderation, trip_marketplace
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from .database import SessionLocal
+from .database import SessionLocal, get_db
 from .models import User, UserRole
 from .auth import get_password_hash, validate_strong_password
 from contextlib import asynccontextmanager
@@ -355,18 +356,25 @@ async def health_check():
 
 
 @app.get("/ready", tags=["monitoring"])
-async def readiness_check(db: Session = Depends(SessionLocal)):
+async def readiness_check(db: Session = Depends(get_db)):
+    """Readiness probe: 200 only when the database answers ``SELECT 1``, else 503.
+
+    The session lifecycle is owned by ``get_db`` (closed in its ``finally``), so the
+    handler never closes the session itself.
+    """
     try:
         db.execute(text("SELECT 1"))
         db_ok = True
     except Exception:
         db_ok = False
-    finally:
-        db.close()
-    return {
+
+    payload = {
         "status": "ok" if db_ok else "degraded",
         "checks": {
             "database": "ok" if db_ok else "error",
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    if db_ok:
+        return payload
+    return JSONResponse(status_code=503, content=payload)

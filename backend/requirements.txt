@@ -11,3 +11,4 @@ python-jose[cryptography]
 python-multipart
 email-validator
 resend
+alembic==1.14.1

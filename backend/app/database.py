@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import logging
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -133,10 +134,79 @@ DATABASE_CONNECT_ARGS = build_connect_args(
     sslmode=DATABASE_SSLMODE, sslrootcert=DATABASE_SSLROOTCERT
 )
 
+# --- Connection pool configuration ------------------------------------------------
+# Tunables for the QueuePool used by PostgreSQL. A bad value (blank, non-numeric or
+# negative) falls back to the safe default instead of producing an unusable pool.
+DEFAULT_DB_POOL_SIZE = 5
+DEFAULT_DB_MAX_OVERFLOW = 10
+DEFAULT_DB_POOL_RECYCLE = 1800
+
+logger = logging.getLogger(__name__)
+
+
+def coerce_pool_int(raw_value, default, *, name: str) -> int:
+    """Coerce a raw pool setting to a non-negative ``int``.
+
+    Blank, non-numeric and negative values are rejected by returning ``default`` so a
+    misconfigured environment variable degrades to the safe default rather than
+    breaking the pool. The rejected value is a non-secret integer setting, so it is
+    logged to surface the misconfiguration.
+    """
+    raw = (raw_value or "").strip()
+    value = None
+    if raw:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            value = None
+    if value is None or value < 0:
+        if raw:
+            logger.warning("Ignoring invalid %s=%r; using default %d.", name, raw, default)
+        return default
+    return value
+
+
+def _is_postgres_url(url: str) -> bool:
+    """True when ``url`` targets PostgreSQL (the dialect that uses QueuePool tuning).
+
+    Accepts the driver-qualified ``postgresql+psycopg2`` scheme as well as the plain
+    ``postgresql`` / ``postgres`` schemes managed providers hand out.
+    """
+    return urlsplit(url).scheme.lower().startswith("postgres")
+
+
+def build_pool_options(url, *, pool_size: int, max_overflow: int, pool_recycle: int) -> dict:
+    """Return engine pool kwargs appropriate for ``url``.
+
+    PostgreSQL receives the tuned QueuePool settings. Any other dialect - notably the
+    SQLite URL used by the test suite, whose default pool rejects ``max_overflow`` -
+    receives nothing so dialect-specific options are never forced onto it.
+    """
+    if not _is_postgres_url(url):
+        return {}
+    return {
+        "pool_size": pool_size,
+        "max_overflow": max_overflow,
+        "pool_recycle": pool_recycle,
+    }
+
+
+DB_POOL_SIZE = coerce_pool_int(os.getenv("DB_POOL_SIZE"), DEFAULT_DB_POOL_SIZE, name="DB_POOL_SIZE")
+DB_MAX_OVERFLOW = coerce_pool_int(os.getenv("DB_MAX_OVERFLOW"), DEFAULT_DB_MAX_OVERFLOW, name="DB_MAX_OVERFLOW")
+DB_POOL_RECYCLE = coerce_pool_int(os.getenv("DB_POOL_RECYCLE"), DEFAULT_DB_POOL_RECYCLE, name="DB_POOL_RECYCLE")
+
+POOL_OPTIONS = build_pool_options(
+    SQLALCHEMY_DATABASE_URL,
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
+    pool_recycle=DB_POOL_RECYCLE,
+)
+
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     pool_pre_ping=True,
     connect_args=DATABASE_CONNECT_ARGS,
+    **POOL_OPTIONS,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

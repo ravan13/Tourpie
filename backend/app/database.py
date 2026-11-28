@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from urllib.parse import quote_plus
+from urllib.parse import parse_qs, quote_plus, urlsplit
 
 _base_dir = Path(__file__).resolve().parent.parent
 load_dotenv(_base_dir / ".env", override=False)
@@ -50,7 +50,94 @@ def build_postgres_url() -> str:
 
 SQLALCHEMY_DATABASE_URL = build_postgres_url()
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True)
+# --- PostgreSQL SSL configuration -------------------------------------------------
+# libpq accepts a fixed set of sslmode tokens; anything else is rejected outright so a
+# typo cannot silently weaken transport security. Development defaults to "prefer"
+# (use TLS when the server offers it) and production to "require" (refuse plaintext).
+ALLOWED_DATABASE_SSLMODES = (
+    "disable",
+    "allow",
+    "prefer",
+    "require",
+    "verify-ca",
+    "verify-full",
+)
+_DEVELOPMENT_SSLMODE = "prefer"
+_PRODUCTION_SSLMODE = "require"
+
+# Environment detection mirrors app.auth / app.main / app.seed for consistency.
+_env_name = (
+    os.getenv("TOURPIE_ENV") or os.getenv("ENVIRONMENT") or os.getenv("ENV") or "development"
+).strip().lower()
+_is_production = _env_name in ("prod", "production")
+
+
+def default_database_sslmode(is_production: bool) -> str:
+    """Return the SSL mode used when neither the environment nor the URL specifies one."""
+    return _PRODUCTION_SSLMODE if is_production else _DEVELOPMENT_SSLMODE
+
+
+def resolve_database_sslmode(raw_value, *, is_production: bool) -> str:
+    """Resolve an explicit ``DATABASE_SSLMODE`` value to a valid libpq token.
+
+    A blank/absent value falls back to the environment default. An unknown token raises
+    immediately so a misconfiguration fails fast instead of silently downgrading TLS.
+    Only the (non-secret) mode token is ever surfaced in the error message.
+    """
+    value = (raw_value or "").strip().lower()
+    if not value:
+        return default_database_sslmode(is_production)
+    if value not in ALLOWED_DATABASE_SSLMODES:
+        raise ValueError(
+            "Invalid DATABASE_SSLMODE {!r}; expected one of: {}".format(
+                value, ", ".join(ALLOWED_DATABASE_SSLMODES)
+            )
+        )
+    return value
+
+
+def build_connect_args(*, sslmode=None, sslrootcert=None) -> dict:
+    """Build psycopg2 ``connect_args`` for SSL.
+
+    ``sslmode`` is included only when set, so a mode already carried by the connection
+    URL is left untouched; ``sslrootcert`` is forwarded only when a path is configured.
+    """
+    connect_args = {}
+    if sslmode:
+        connect_args["sslmode"] = sslmode
+    certificate = (sslrootcert or "").strip()
+    if certificate:
+        connect_args["sslrootcert"] = certificate
+    return connect_args
+
+
+def _url_declares_sslmode(url: str) -> bool:
+    """True when the connection URL already carries an ``sslmode`` query parameter."""
+    return "sslmode" in parse_qs(urlsplit(url).query)
+
+
+# Effective SSL configuration. Precedence: explicit DATABASE_SSLMODE > mode embedded in
+# DATABASE_URL > environment default. SQLAlchemy lets connect_args win over URL query
+# parameters, so an sslmode already present in the URL is intentionally not overridden.
+if (os.getenv("DATABASE_SSLMODE") or "").strip():
+    DATABASE_SSLMODE = resolve_database_sslmode(
+        os.getenv("DATABASE_SSLMODE"), is_production=_is_production
+    )
+elif _url_declares_sslmode(SQLALCHEMY_DATABASE_URL):
+    DATABASE_SSLMODE = None
+else:
+    DATABASE_SSLMODE = default_database_sslmode(_is_production)
+
+DATABASE_SSLROOTCERT = (os.getenv("DATABASE_SSLROOTCERT") or "").strip()
+DATABASE_CONNECT_ARGS = build_connect_args(
+    sslmode=DATABASE_SSLMODE, sslrootcert=DATABASE_SSLROOTCERT
+)
+
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    pool_pre_ping=True,
+    connect_args=DATABASE_CONNECT_ARGS,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

@@ -10,10 +10,30 @@ _base_dir = Path(__file__).resolve().parent.parent
 load_dotenv(_base_dir / ".env", override=False)
 load_dotenv(_base_dir.parent / ".env", override=False)
 
+_PLAIN_POSTGRES_SCHEMES = ("postgres://", "postgresql://")
+
+
+def _normalize_postgres_scheme(url: str) -> str:
+    """Force the psycopg2 dialect onto plain PostgreSQL URL schemes.
+
+    Managed providers (Railway, Heroku, Render) commonly inject ``postgres://`` or
+    ``postgresql://`` URLs without a driver. SQLAlchemy 2.0 rejects the legacy
+    ``postgres://`` scheme outright, so both are rewritten to
+    ``postgresql+psycopg2://``. Only the scheme is replaced: credentials, host,
+    port, database and query string are preserved verbatim, and URLs that already
+    name a driver (e.g. ``postgresql+psycopg2://``) are returned unchanged.
+    """
+    lowered = url.lower()
+    for scheme in _PLAIN_POSTGRES_SCHEMES:
+        if lowered.startswith(scheme):
+            return "postgresql+psycopg2://" + url[len(scheme):]
+    return url
+
+
 def build_postgres_url() -> str:
     url = (os.getenv("DATABASE_URL") or "").strip()
     if url:
-        return url
+        return _normalize_postgres_scheme(url)
     host = (os.getenv("DATABASE_HOST") or "127.0.0.1").strip()
     port = int(os.getenv("DATABASE_PORT", "5432"))
     name = (os.getenv("DATABASE_NAME") or "tourpie").strip()
